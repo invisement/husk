@@ -1,5 +1,5 @@
 /*
-minimalist Router based on web standards in typescript. 
+minimalist Router based on web standards in typescript.
 Run this file from cli or look at the if (import.meta.main) section for how to use with an example.
 - look at options and defaultOptions for options.
 */
@@ -59,17 +59,19 @@ export class Router {
 	}
 
 	// decorator
-	assign =
-		(pathname: string, options: Options = {}) =>
-		(handler: Function, context: { addInitializer: AddInitializer }) => {
-			// managing this is difficult: pass this as router, inside initializer this is caller class
-			// deno-lint-ignore no-this-alias
-			const router = this; // here this means Router class
-			context.addInitializer(function (this: unknown) {
-				router.push(pathname, handler.bind(this), options); // this here means caller class
-			});
-			//return handler;
-		};
+	assign = (pathname: string, options: Options = {}) =>
+	(
+		handler: Function,
+		context: { addInitializer: AddInitializer },
+	): void => {
+		// managing this is difficult: pass this as router, inside initializer this is caller class
+		// deno-lint-ignore no-this-alias
+		const router = this; // here this means Router class
+		context.addInitializer(function (this: unknown) {
+			router.push(pathname, handler.bind(this), options); // this here means caller class
+		});
+		//return handler;
+	};
 }
 
 if (import.meta.main) {
@@ -90,10 +92,10 @@ if (import.meta.main) {
 			id: string,
 			name: string,
 			dob: string,
-			salary: number
+			salary: number,
 		) {
 			console.log(
-				"I extract id from params, name from query, dob and salary from payload to process"
+				"I extract id from params, name from query, dob and salary from payload to process",
 			);
 			return { message: "I processed", id, name, dob, salary };
 		}
@@ -104,7 +106,7 @@ if (import.meta.main) {
 		"/extra-route/:name",
 		(name: string, lastName: string) =>
 			`processed ${lastName} from query parameters and ${name} from path params.`,
-		{ query: true }
+		{ query: true },
 	);
 
 	Deno.serve((req) => {
