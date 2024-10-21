@@ -64,7 +64,7 @@ export class Router {
 			// managing this is difficult: pass this as router, inside initializer this is caller class
 			// deno-lint-ignore no-this-alias
 			const router = this; // here this means Router class
-			context.addInitializer(function () {
+			context.addInitializer(function (this: any) {
 				router.push(pathname, handler.bind(this), options); // this here means caller class
 			});
 			//return handler;
