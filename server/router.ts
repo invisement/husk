@@ -30,7 +30,7 @@ export class Router {
 	}
 
 	// if return null, means it was not in routes
-	serve(req: Request) {
+	serve(req: Request): unknown | null {
 		//console.log("req routes", this.routes);
 		for (const { pathname, handler, options } of this.routes) {
 			if (req.method != options.method) continue;
@@ -52,6 +52,7 @@ export class Router {
 				const payload = req.json();
 				Object.assign(params, payload);
 			}
+
 			return handler(...Object.values(params));
 		}
 		return null;
@@ -64,7 +65,7 @@ export class Router {
 			// managing this is difficult: pass this as router, inside initializer this is caller class
 			// deno-lint-ignore no-this-alias
 			const router = this; // here this means Router class
-			context.addInitializer(function (this: any) {
+			context.addInitializer(function (this: unknown) {
 				router.push(pathname, handler.bind(this), options); // this here means caller class
 			});
 			//return handler;
@@ -97,7 +98,7 @@ if (import.meta.main) {
 			return { message: "I processed", id, name, dob, salary };
 		}
 	}
-	const routes1 = new Routes();
+	const _routes1 = new Routes();
 
 	router.push(
 		"/extra-route/:name",
@@ -111,6 +112,6 @@ if (import.meta.main) {
 		if (resp === null) {
 			return new Response("404: Resource Not Found!", { status: 404 });
 		}
-		return new Response(resp);
+		return new Response(resp as BodyInit);
 	});
 }
