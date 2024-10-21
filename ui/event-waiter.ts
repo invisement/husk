@@ -1,15 +1,17 @@
-/* converts event to async pattern
+/** Converts event pattern to async pattern
 
-EventWaiter is mainly used in dialog. Client file/function opens dialog, await it to close. Then, it can go and read value or variables.
-
-inside dialog:
+Example: if you want to open a dialog model and then get its modified value after closing:
 const eventWaiter = new EventWaiter<string>()
 - @click to close modal/dialog emit event: eventWaiter.value = returnValue
 - in showModal: const returnValue = await eventWaiter.value
+ */
 
-It can be used anywhere that we want to wait for an event to happen.
-*/
-
+/** Converts event pattern to async pattern for ease of use and readability. It accepts any type of variables as a generic argument.
+ * `const eventWaiter = new EventWaiter<string>()`
+ * EventWaiter has getter and setter.
+ * - The getter is async and you use where you want to wait for an event to happen. `const returnValue = await eventWaiter.value`
+ * - When the waited event happens, just set the value `@click= ${eventWaiter.value = newValue}`.
+ */
 export class EventWaiter<Type> extends EventTarget {
 	eventName: string = "defaultEvent";
 
@@ -18,7 +20,7 @@ export class EventWaiter<Type> extends EventTarget {
 			this.addEventListener(
 				this.eventName,
 				(e: Event) => resolve((e as CustomEvent).detail),
-				{ once: true }
+				{ once: true },
 			);
 		});
 	}

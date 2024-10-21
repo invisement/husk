@@ -1,9 +1,12 @@
-/*
-minimalist Router based on web standards in typescript.
-Run this file from cli or look at the if (import.meta.main) section for how to use with an example.
-- look at options and defaultOptions for options.
+/**
+Tiny Router based on web standards in typescript.
+const router = new Router()
+router.push(pattern, handler, options) // push method
+@router.assign(pattern, options) // decorator usage
+defaultOptions = {method: 'GET', params: true, query: false, body: false}
 */
 
+/** Options type for optional argument. The default values are {method: 'GET', params: true} */
 export type Options = {
 	method?: string;
 	payload?: boolean;
@@ -12,6 +15,7 @@ export type Options = {
 };
 const defaultOptions: Options = { method: "GET", params: true };
 
+/** Route type, pathname follows web standard URLPattern (like /employees/:id) */
 export type Route = {
 	pathname: string;
 	handler: Function;
@@ -20,6 +24,12 @@ export type Route = {
 
 type AddInitializer = (initializer: () => void) => void;
 
+/** Offers two ways to add a Route:
+ * - decorator for class methods `@router.assign(pattern, options)`
+ * - push method `router.push(pattern, handler, options)
+ * use serve method to serve: `const response = router.serve(routes)` or `const response = await router.serve(routes)` if your handler is async.
+ * `response` is the response from your handler function
+ */
 export class Router {
 	routes: Route[] = [];
 

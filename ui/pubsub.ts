@@ -1,5 +1,14 @@
+/** Provides a simple pub-sub mechanism that is helpful especially for UI state management. */
+
 type Func<Type> = (v: Type) => void;
 
+/**
+ * Initiate your variable with given type: `const newVar = new PubSub<string>("initial value")` and import this in all publishers and subscribers for this variable
+ * When you want to publish use pub method: `newVar.pub(newValue)`
+ * You can subscribe this value and run your provided function whenever its value changes (pub happens): `const ticket = newVar.sub(hadnler)`
+ * You can unsubscribe from the variable by using your subscriber ticket: `newVar.unsub(ticket)`
+ * You can also access the current subscribers or current value: `newVal.value`
+ */
 export class PubSub<Type> {
 	_value: Type;
 	_subscribers: Map<string, Func<Type>> = new Map();
