@@ -1,6 +1,8 @@
-// For JS/TS files in a given dir (or current dir), creates the DOT graph
-// If git presents, respect git (git ls-files)
-// deno --allow-run=git --alow-read imports-graph.ts
+/**
+ * For JS/TS files in a given dir (or current dir), creates the DOT graph
+ * If git presents, respect git (git ls-files)
+ * deno --allow-run=git --alow-read imports-graph.ts
+ */
 
 import { walk } from "jsr:@std/fs@1.0.4";
 import * as path from "jsr:@std/path@1.0.6";
@@ -98,7 +100,7 @@ function createSubgraphName(dirPath: DirName): string {
 	return `cluster_${dirPath.replace(/[^\w]/g, "_")}`;
 }
 
-/** for given directory (or current directory), creates import dependency graph in DOT notation and dumps to stdio */
+/** for given directory (or the current directory), creates import dependency graph in DOT notation and dumps to stdio */
 export async function toDot(rootDir: DirName = "."): Promise<string> {
 	let graph: string = "";
 	const files = await findTsJsFiles(rootDir);
