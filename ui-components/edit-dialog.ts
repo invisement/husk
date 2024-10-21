@@ -3,6 +3,7 @@ import { customElement, query } from "lit/decorators.js";
 
 import { EventWaiter } from "jsr:@invisement/husk";
 
+/** It opens a modal dialog to edit a text and returns the modified text on close, or null in cancel */
 @customElement("edit-dialog")
 export class EditDialog extends LitElement {
 	@query("dialog")
