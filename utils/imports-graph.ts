@@ -225,7 +225,7 @@ function createEdge(file: string, importItems: string, importPath: string) {
 	return edge;
 }
 
-export function dirToDot(): void {
+export async function dirToDot(): Promise<void> {
 	const rootDir = Deno.args[0] || ".";
 	const graph = await toDot(rootDir);
 	console.log(graph);
