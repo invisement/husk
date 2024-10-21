@@ -7,11 +7,11 @@ export class PubSub<Type> {
 		this._value = v;
 	}
 
-	get value() {
+	get value(): Type {
 		return this._value;
 	}
 
-	pub(newValue: Type) {
+	pub(newValue: Type): void {
 		this._value = newValue;
 
 		console.log("new value is published");
@@ -23,20 +23,20 @@ export class PubSub<Type> {
 				func(newValue);
 			} catch (e) {
 				console.error(
-					`Callback function ${func} does not exist or throws error! I removed it from subscribers! \n Error message: ${e}`
+					`Callback function ${func} does not exist or throws error! I removed it from subscribers! \n Error message: ${e}`,
 				);
 				this._subscribers.delete(key);
 			}
 		});
 	}
 
-	sub(func: Func<Type>) {
+	sub(func: Func<Type>): string {
 		const key = Math.random().toString(36).slice(2);
 		this._subscribers.set(key, func);
 		return key;
 	}
 
-	unsub(key: string) {
+	unsub(key: string): void {
 		this._subscribers.delete(key);
 	}
 }
