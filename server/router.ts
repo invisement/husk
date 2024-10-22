@@ -9,18 +9,27 @@ defaultOptions = {method: 'GET', params: true, query: false, body: false}
 /** Options type for optional argument. The default values are {method: 'GET', params: true} */
 
 import { serveFile } from "jsr:@std/http@^1/file-server";
+type HttpMethod =
+	| "GET"
+	| "POST"
+	| "PUT"
+	| "DELETE"
+	| "PATCH"
+	| "HEAD"
+	| "OPTIONS"
+	| "CONNECT"
+	| "TRACE";
 
 export type Options = {
-	method?: string;
+	method?: HttpMethod;
 	payload?: boolean;
-	params?: boolean;
 	query?: boolean;
 };
-const defaultOptions: Options = { method: "GET", params: true };
+const defaultOptions: Options = { method: "GET" };
 
-/** Route type, pathname follows web standard URLPattern (like /employees/:id) */
+/** Route type, pattern follows web standard URLPattern (like /employees/:id) */
 export type Route = {
-	pathname: string;
+	pattern: URLPattern;
 	handler: Function | string;
 	options: Options;
 };
@@ -36,7 +45,7 @@ type AddInitializer = (initializer: () => void) => void;
 
 const pathFinder = function (
 	templateString: string,
-	templateVars: Record<string, string>,
+	templateVars: Record<string, string | undefined>,
 ) {
 	return new Function("return `" + templateString + "`;").call(templateVars);
 };
@@ -44,27 +53,26 @@ const pathFinder = function (
 export class Router {
 	routes: Route[] = [];
 
-	push(pathname: string, handler: Function | string, options: Options = {}) {
+	push(pattern: string, handler: Function | string, options: Options = {}) {
 		//console.log("in push this is", this);
 		options = { ...defaultOptions, ...options };
-		this.routes.push({ pathname, handler, options });
+		this.routes.push({
+			pattern: new URLPattern(pattern),
+			handler,
+			options,
+		});
 	}
 
 	// if return null, means it was not in routes
 	async serve(req: Request): Promise<Response | null> {
 		//console.log("req routes", this.routes);
-		for (const { pathname, handler, options } of this.routes) {
+		for (const { pattern, handler, options } of this.routes) {
 			if (req.method != options.method) continue;
 
-			const matcher = new URLPattern({ pathname });
-			const match = matcher.exec(req.url);
+			const match = pattern.exec(req.url);
 			if (!match) continue;
 
-			const params: Record<string, string> = {};
-			if (options.params) {
-				const pathParams = match.pathname.groups;
-				Object.assign(params, pathParams);
-			}
+			const params = match.pathname.groups;
 
 			if (options.query) {
 				const query = Object.fromEntries(new URL(req.url).searchParams);
@@ -86,7 +94,7 @@ export class Router {
 	}
 
 	// decorator
-	assign = (pathname: string, options: Options = {}) =>
+	assign = (pattern: string, options: Options = {}) =>
 	(
 		handler: Function,
 		context: { addInitializer: AddInitializer },
@@ -95,7 +103,7 @@ export class Router {
 		// deno-lint-ignore no-this-alias
 		const router = this; // here this means Router class
 		context.addInitializer(function (this: unknown) {
-			router.push(pathname, handler.bind(this), options); // this here means caller class
+			router.push(pattern, handler.bind(this), options); // this here means caller class
 		});
 		//return handler;
 	};
