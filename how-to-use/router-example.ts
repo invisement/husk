@@ -1,7 +1,9 @@
 import { Router } from "jsr:@invisement/husk@^0";
 
 const router = new Router();
-class Routes {
+
+// JS decorators only works in class, so define a class and initiate it
+new class {
 	value = "hello";
 
 	@router.assign("/say-hi/:id")
@@ -24,9 +26,9 @@ class Routes {
 		);
 		return { message: "I processed", id, name, dob, salary };
 	}
-}
-const _routes1 = new Routes();
+}();
 
+// you can also use push method
 router.push(
 	"/extra-route/:name",
 	(name: string, lastName: string) =>
@@ -34,10 +36,13 @@ router.push(
 	{ query: true },
 );
 
-Deno.serve((req) => {
-	const resp = router.serve(req);
+// for static serving. Note that the second is string but in the form of JS template literals
+router.push("/serve-file/:fileName", "/path/to/${fileName}.json");
+
+Deno.serve(async (req) => {
+	const resp = await router.serve(req);
 	if (resp === null) {
 		return new Response("404: Resource Not Found!", { status: 404 });
 	}
-	return new Response(resp as BodyInit);
+	return resp;
 });

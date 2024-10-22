@@ -8,6 +8,8 @@ If offers two ways to add a new Route
 - Decorator `@router.assign(pattern, options)`. For decorators to work you need to use them on class methods.
 - Use push method `router.push(pattern, handler, options)`
 
+You can also add static serving routes like: `router.push("/serve-file/:fileName", "/path-to/${fileName}.json")`
+
 > `options` are optional and its default values are `{method: 'GET', params: true}`. If you want to do POST and extract query and payload parameters as well: `{method: 'POST', query: true, payload: true`}
 
 For a usage example, look into [router test example](./how-to-use/router-example.ts)

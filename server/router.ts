@@ -7,6 +7,9 @@ defaultOptions = {method: 'GET', params: true, query: false, body: false}
 */
 
 /** Options type for optional argument. The default values are {method: 'GET', params: true} */
+
+import { serveFile } from "jsr:@std/http/file-server";
+
 export type Options = {
 	method?: string;
 	payload?: boolean;
@@ -18,7 +21,7 @@ const defaultOptions: Options = { method: "GET", params: true };
 /** Route type, pathname follows web standard URLPattern (like /employees/:id) */
 export type Route = {
 	pathname: string;
-	handler: Function;
+	handler: Function | string;
 	options: Options;
 };
 
@@ -30,17 +33,25 @@ type AddInitializer = (initializer: () => void) => void;
  * use serve method to serve: `const response = router.serve(routes)` or `const response = await router.serve(routes)` if your handler is async.
  * `response` is the response from your handler function
  */
+
+const pathFinder = function (
+	templateString: string,
+	templateVars: Record<string, string>,
+) {
+	return new Function("return `" + templateString + "`;").call(templateVars);
+};
+
 export class Router {
 	routes: Route[] = [];
 
-	push(pathname: string, handler: Function, options: Options = {}) {
+	push(pathname: string, handler: Function | string, options: Options = {}) {
 		//console.log("in push this is", this);
 		options = { ...defaultOptions, ...options };
 		this.routes.push({ pathname, handler, options });
 	}
 
 	// if return null, means it was not in routes
-	serve(req: Request): unknown | null {
+	async serve(req: Request): Promise<Response | null> {
 		//console.log("req routes", this.routes);
 		for (const { pathname, handler, options } of this.routes) {
 			if (req.method != options.method) continue;
@@ -54,6 +65,7 @@ export class Router {
 				const pathParams = match.pathname.groups;
 				Object.assign(params, pathParams);
 			}
+
 			if (options.query) {
 				const query = Object.fromEntries(new URL(req.url).searchParams);
 				Object.assign(params, query);
@@ -63,7 +75,12 @@ export class Router {
 				Object.assign(params, payload);
 			}
 
-			return handler(...Object.values(params));
+			if (typeof handler == "string") {
+				return serveFile(req, pathFinder(handler, params));
+			}
+
+			const response = await handler(...Object.values(params));
+			return new Response(response as BodyInit);
 		}
 		return null;
 	}
