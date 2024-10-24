@@ -20,6 +20,7 @@ type HttpMethod =
 	| "CONNECT"
 	| "TRACE";
 
+/** Optional params that you can provide for both decorator and push method of the router  */
 export type Options = {
 	method?: HttpMethod;
 	payload?: boolean;
@@ -36,13 +37,6 @@ export type Route = {
 
 type AddInitializer = (initializer: () => void) => void;
 
-/** Offers two ways to add a Route:
- * - decorator for class methods `@router.assign(pattern, options)`
- * - push method `router.push(pattern, handler, options)
- * use serve method to serve: `const response = router.serve(routes)` or `const response = await router.serve(routes)` if your handler is async.
- * `response` is the response from your handler function
- */
-
 const pathFinder = (
 	path: string,
 	params: Record<string, string | undefined>,
@@ -54,7 +48,13 @@ const pathFinder = (
 	console.log("static", path, params);
 	return path;
 };
-
+/** Offers two ways to add a Route:
+ * - decorator for class methods `@router.assign(pattern, options)`
+ * - push method `router.push(pattern, handler, options)
+ * you can add staticServe: `router.push('/assets/:path* /:file', 'ui/static/:path/assets/:file.css')`
+ * use serve method to serve: `const response = router.serve(routes)` or `const response = await router.serve(routes)` if your handler is async.
+ * `response` is the response from your handler function
+ */
 export class Router {
 	routes: Route[] = [];
 	baseURL: string = "http:/0.0.0.0:8000";
