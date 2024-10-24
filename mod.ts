@@ -1,6 +1,4 @@
-/**
- * A tiny framework that provides helpers to build a full stack web application in typescript and deno
- */
+/** A tiny framework that provides helpers to build a full stack web application in typescript and deno */
 
 export { Router } from "./server/router.ts";
 export type { Options, Route } from "./server/router.ts";
