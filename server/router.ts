@@ -8,7 +8,7 @@ defaultOptions = {method: 'GET', params: true, query: false, body: false}
 
 /** Options type for optional argument. The default values are {method: 'GET', params: true} */
 
-import { serveFile } from "jsr:@std/http@^1/file-server";
+import { serveDir, serveFile } from "jsr:@std/http@^1/file-server";
 type HttpMethod =
 	| "GET"
 	| "POST"
@@ -43,21 +43,30 @@ type AddInitializer = (initializer: () => void) => void;
  * `response` is the response from your handler function
  */
 
-const pathFinder = function (
-	templateString: string,
-	templateVars: Record<string, string | undefined>,
-) {
-	return new Function("return `" + templateString + "`;").call(templateVars);
+const pathFinder = (
+	path: string,
+	params: Record<string, string | undefined>,
+) => {
+	console.log("in path finder");
+	for (const [key, value] of Object.entries(params)) {
+		path = path.replace(`:${key}`, value || "");
+	}
+	console.log("static", path, params);
+	return path;
 };
 
 export class Router {
 	routes: Route[] = [];
+	baseURL: string = "http:/0.0.0.0:8000";
+
+	constructor(baseURL: string) {
+		this.baseURL = baseURL;
+	}
 
 	push(pattern: string, handler: Function | string, options: Options = {}) {
-		//console.log("in push this is", this);
 		options = { ...defaultOptions, ...options };
 		this.routes.push({
-			pattern: new URLPattern(pattern),
+			pattern: new URLPattern({ pathname: pattern }),
 			handler,
 			options,
 		});
@@ -65,7 +74,6 @@ export class Router {
 
 	// if return null, means it was not in routes
 	async serve(req: Request): Promise<Response | null> {
-		//console.log("req routes", this.routes);
 		for (const { pattern, handler, options } of this.routes) {
 			if (req.method != options.method) continue;
 
@@ -78,6 +86,7 @@ export class Router {
 				const query = Object.fromEntries(new URL(req.url).searchParams);
 				Object.assign(params, query);
 			}
+
 			if (options.payload) {
 				const payload = req.json();
 				Object.assign(params, payload);
@@ -88,7 +97,7 @@ export class Router {
 			}
 
 			const response = await handler(...Object.values(params));
-			return new Response(response as BodyInit);
+			return response;
 		}
 		return null;
 	}

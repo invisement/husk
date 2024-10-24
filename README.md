@@ -7,6 +7,9 @@ Router (`const router = new Router()`) matches URLPatterns (like `/employees/:id
 If offers two ways to add a new Route
 - Decorator `@router.assign(pattern, options)`. For decorators to work you need to use them on class methods.
 - Use push method `router.push(pattern, handler, options)`
+- For static files use source pattern to target pattern matching for instance
+	- `router.push("/static/:file", "./from/assets/:file.json")` matches incoming path (`/statis/:file`) and then returns the file in the path `./from/assets/:file.json`. which adds `.json` to file name, and replace `/static` with `./from/assets`
+	- For multiple folders use * (repeat): `router.push('./static/:path*/:file', './ui/:path/assets/:file'`).
 
 You can also add static serving routes like: `router.push("/serve-file/:fileName", "/path-to/${fileName}.json")`
 
@@ -40,4 +43,17 @@ You can also directly import it into your TS files for more advanced use cases:
 import { toDot } from "jsr:@invisement/husk";
 ```
 
+### UI Builder
+The goal is that you develop UI and for bundling you run one line (without install) to have ui ready for distribution/production.
+
+The util file `util/bundle.ts` is a UI Build tool using esbuild.
+- It transpiles and bundles ts and js files
+- It copies any other file without any change
+
+```sh
+deno run -A jsr:@invisement/husk@^0/bundle.ts fromDir=toDir file1 file2 file3
+## example:
+deno run -A jsr:@invisement/husk@^0/bundle.ts ./src=./dist index.html index.js index.css service/my-file.ts
+```
+The above command bundles or copies mentioned files from src to dist (while keeping their file structures)
 

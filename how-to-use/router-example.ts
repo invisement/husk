@@ -36,8 +36,11 @@ router.push(
 	{ query: true },
 );
 
-// for static serving. Note that the second is string but in the form of JS template literals
-router.push("/serve-file/:fileName", "/path/to/${fileName}.json");
+// for static serving. Note that the second defines where the file is (relative path of the file)
+router.push(
+	"/serve-file/:path*/:fileName",
+	"./assets/:path/assets/:fileName.json",
+);
 
 Deno.serve(async (req) => {
 	const resp = await router.serve(req);
