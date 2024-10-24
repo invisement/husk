@@ -8,4 +8,4 @@ export { PubSub } from "./ui/pubsub.ts";
 export { EventWaiter } from "./ui/event-waiter.ts";
 
 export { toDot } from "./utils/imports-graph.ts";
-export { UIBuild } from "./utils/bundle.ts";
+export { Bundler } from "./utils/bundle.ts";
