@@ -5,12 +5,8 @@
  * deno run -A bundle.ts ./src=./dist index.html index.js index.css service/my-file.ts
  */
 
-import {
-	build,
-	BuildOptions,
-	stop,
-} from "https://deno.land/x/esbuild@v0.20.1/mod.js";
-import { join } from "jsr:@std/path";
+import { build, type BuildOptions, stop } from "npm:esbuild@0.24.0";
+import { join } from "jsr:@std/path@1.0.6";
 import { ensureFile } from "jsr:@std/fs@1.0.4";
 
 type CopyFile = { from: string; to: string };
@@ -34,7 +30,9 @@ interface Bundler_ {
 		entries: Entry[],
 	): { contexts: BuildOptions[]; copyFiles: CopyFile[] };
 
-	bundle(shelve: { contexts: BuildOptions[]; copyFiles: CopyFile[] }): void;
+	bundle(
+		shelve: { contexts: BuildOptions[]; copyFiles: CopyFile[] },
+	): Promise<void>;
 	//watch(contexts: BuildOptions[]): unknown[];
 	//stop(): void;
 	//dispose(): void;
@@ -92,9 +90,9 @@ export class Bundler implements Bundler_ {
 		const copyFiles: CopyFile[] = [];
 		entries.forEach(({ type, filePath, fromDir, toDir }) => {
 			if (type == "build") {
-				this.contextIt(filePath, fromDir, toDir);
+				contexts.push(this.contextIt(filePath, fromDir, toDir));
 			} else {
-				this.fileIt(filePath, fromDir, toDir);
+				copyFiles.push(this.fileIt(filePath, fromDir, toDir));
 			}
 		});
 		return { contexts, copyFiles };
@@ -103,13 +101,14 @@ export class Bundler implements Bundler_ {
 	async bundle(
 		shelve: { contexts: BuildOptions[]; copyFiles: CopyFile[] },
 	): Promise<void> {
+		console.log(shelve);
 		for (const context of shelve.contexts) {
 			context.outfile && await ensureFile(context.outfile);
-			build(context);
+			await build(context);
 		}
 		for (const { from, to } of shelve.copyFiles) {
-			ensureFile(to);
-			Deno.copyFile(from, to);
+			await ensureFile(to);
+			await Deno.copyFile(from, to);
 		}
 	}
 }
