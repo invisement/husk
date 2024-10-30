@@ -64,7 +64,11 @@ export class Router {
 		Object.assign(this.defaultOptions, defaultOptions);
 	}
 
-	push(pattern: string, handler: Function | string, options: Options = {}) {
+	push(
+		pattern: string,
+		handler: Function | string,
+		options: Options = {},
+	): void {
 		options = { ...this.defaultOptions, ...options };
 		for (const origin of (options.origins || ["*"])) {
 			this.routes.push({
@@ -76,7 +80,6 @@ export class Router {
 				options,
 			});
 		}
-		return this;
 	}
 
 	// if return null, means it was not in routes

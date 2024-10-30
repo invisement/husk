@@ -14,7 +14,7 @@ import {
 } from "npm:esbuild@0.24.0";
 import { join } from "jsr:@std/path@1.0.6";
 import { emptyDir, ensureFile } from "jsr:@std/fs@1.0.4";
-import { parseArgs } from "jsr:@std/cli/parse-args";
+import { parseArgs } from "jsr:@std/cli/parse-args@1.0.6";
 
 const bundleExts = ["ts", "js", "css", "tsx", "jsx"];
 
@@ -160,7 +160,7 @@ export class Bundler implements Bundler_ {
 		}
 	}
 
-	async transpile(shelve: Shelve) {
+	async transpile(shelve: Shelve): Promise<BuildContext<BuildOptions>[]> {
 		const tempDir = await Deno.makeTempDir();
 		const watchPoints: BuildContext<BuildOptions>[] = [];
 		for (let { entryPoints, outfile } of shelve.contexts) {
@@ -182,7 +182,7 @@ export class Bundler implements Bundler_ {
 		return watchPoints;
 	}
 
-	async watch(shelve: Shelve) {
+	async watch(shelve: Shelve): Promise<BuildContext<BuildOptions>[]> {
 		const watchPoints = await this.transpile(shelve);
 		for (const watchPoint of watchPoints) {
 			await watchPoint.watch();
