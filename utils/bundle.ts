@@ -14,7 +14,7 @@ import {
 } from "npm:esbuild@0.24.0";
 import { join } from "jsr:@std/path@1.0.6";
 import { emptyDir, ensureFile } from "jsr:@std/fs@1.0.4";
-import { parseArgs } from "jsr:@std/cli/parse-args@1.0.6";
+import { parseArgs } from "jsr:@std/cli@1.0.6/parse-args";
 
 const bundleExts = ["ts", "js", "css", "tsx", "jsx"];
 
