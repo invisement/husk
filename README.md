@@ -51,9 +51,9 @@ The util file `util/bundle.ts` is a UI Build tool using esbuild.
 - It copies any other file without any change
 
 ```sh
-deno run -A jsr:@invisement/husk@^0/bundle.ts fromDir=toDir file1 file2 file3
+deno run -A jsr:@invisement/husk@^0/bundle fromDir=toDir file1 file2 file3
 ## example:
-deno run -A jsr:@invisement/husk@^0/bundle.ts ./src=./dist index.html index.js index.css service/my-file.ts
+deno run -A jsr:@invisement/husk@^0/bundle ./src=./dist index.html index.js index.css service/my-file.ts
 ```
 The above command bundles or copies mentioned files from src to dist (while keeping their file structures)
 

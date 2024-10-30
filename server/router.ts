@@ -3,12 +3,12 @@ Tiny Router based on web standards in typescript.
 const router = new Router()
 router.push(pattern, handler, options) // push method
 @router.assign(pattern, options) // decorator usage
-defaultOptions = {method: 'GET', params: true, query: false, body: false}
+defaultOptions = {method: 'GET', params: true, query: false, body: false, origins: ["*"]}
 */
 
 /** Options type for optional argument. The default values are {method: 'GET', params: true} */
 
-import { serveDir, serveFile } from "jsr:@std/http@^1/file-server";
+import { serveFile } from "jsr:@std/http@^1/file-server";
 type HttpMethod =
 	| "GET"
 	| "POST"
@@ -25,8 +25,10 @@ export type Options = {
 	method?: HttpMethod;
 	payload?: boolean;
 	query?: boolean;
+	origins?: string[];
+	log?: boolean;
+	headers?: Record<string, string>;
 };
-const defaultOptions: Options = { method: "GET" };
 
 /** Route type, pattern follows web standard URLPattern (like /employees/:id) */
 export type Route = {
@@ -41,11 +43,9 @@ const pathFinder = (
 	path: string,
 	params: Record<string, string | undefined>,
 ) => {
-	console.log("in path finder");
 	for (const [key, value] of Object.entries(params)) {
 		path = path.replace(`:${key}`, value || "");
 	}
-	console.log("static", path, params);
 	return path;
 };
 /** Offers two ways to add a Route:
@@ -57,37 +57,55 @@ const pathFinder = (
  */
 export class Router {
 	routes: Route[] = [];
-	baseURL: string = "http:/0.0.0.0:8000";
+	allowedOrigins = "*";
+	defaultOptions: Options = { method: "GET", origins: ["*"], log: true };
 
-	constructor(baseURL: string) {
-		this.baseURL = baseURL;
+	constructor(defaultOptions: Options) {
+		Object.assign(this.defaultOptions, defaultOptions);
 	}
 
 	push(pattern: string, handler: Function | string, options: Options = {}) {
-		options = { ...defaultOptions, ...options };
-		this.routes.push({
-			pattern: new URLPattern({ pathname: pattern }),
-			handler,
-			options,
-		});
+		options = { ...this.defaultOptions, ...options };
+		for (const origin of (options.origins || ["*"])) {
+			this.routes.push({
+				pattern: new URLPattern({
+					pathname: pattern,
+					hostname: origin,
+				}),
+				handler,
+				options,
+			});
+		}
+		return this;
 	}
 
 	// if return null, means it was not in routes
-	async serve(req: Request): Promise<Response | null> {
+	async serve(
+		req: Request,
+	): Promise<Response | null> {
 		for (const { pattern, handler, options } of this.routes) {
-			if (req.method != options.method) continue;
+			const { method, headers, log, query, payload } = options;
+
+			if (req.method != method) continue;
 
 			const match = pattern.exec(req.url);
 			if (!match) continue;
+			log && console.log(
+				`Route ${
+					new Date().toISOString()
+				}: ${req.method} ${req.url} matched ${pattern.pathname} by ${
+					req.headers.get("origin")
+				}`,
+			);
 
 			const params = match.pathname.groups;
 
-			if (options.query) {
+			if (query) {
 				const query = Object.fromEntries(new URL(req.url).searchParams);
 				Object.assign(params, query);
 			}
 
-			if (options.payload) {
+			if (payload) {
 				const payload = req.json();
 				Object.assign(params, payload);
 			}
@@ -97,8 +115,16 @@ export class Router {
 			}
 
 			const response = await handler(...Object.values(params));
-			return response;
+			log && console.log(
+				`Success ${new Date().toISOString()}: ${
+					handler.name || handler
+				}`,
+			);
+			return new Response(response, { headers });
 		}
+		this.defaultOptions.log && console.log(
+			`No Route ${new Date().toISOString()}: ${req.method} ${req.url}`,
+		);
 		return null;
 	}
 

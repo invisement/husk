@@ -5,9 +5,18 @@
  * deno run -A bundle.ts ./src=./dist index.html index.js index.css service/my-file.ts
  */
 
-import { build, type BuildOptions, stop } from "npm:esbuild@0.24.0";
+import {
+	build,
+	type BuildContext,
+	type BuildOptions,
+	context,
+	stop,
+} from "npm:esbuild@0.24.0";
 import { join } from "jsr:@std/path@1.0.6";
-import { ensureFile } from "jsr:@std/fs@1.0.4";
+import { emptyDir, ensureFile } from "jsr:@std/fs@1.0.4";
+import { parseArgs } from "jsr:@std/cli/parse-args";
+
+const bundleExts = ["ts", "js", "css", "tsx", "jsx"];
 
 type CopyFile = { from: string; to: string };
 type Entry = {
@@ -17,6 +26,49 @@ type Entry = {
 	toDir: string;
 };
 
+type Context = {
+	entryPoints: string[];
+	outfile: string;
+};
+
+type Shelve = {
+	contexts: Context[];
+	copyFiles: CopyFile[];
+};
+
+const watchOptions: BuildOptions = {
+	platform: "browser",
+	format: "esm",
+	target: "esnext",
+	minify: false,
+	sourcemap: false,
+	treeShaking: false,
+	loader: {
+		".json": "copy",
+		".jpg": "copy",
+		".png": "copy",
+		".svg": "dataurl",
+		".data": "binary",
+	},
+};
+
+const buildOptions: BuildOptions = {
+	bundle: true,
+	platform: "browser",
+	format: "esm",
+	target: "esnext",
+	minify: true,
+	sourcemap: false,
+	treeShaking: true,
+	loader: {
+		".json": "copy",
+		".jpg": "copy",
+		".png": "copy",
+		"svg": "dataurl",
+		".data": "binary",
+	},
+};
+
 /**
  * Defines interface for bundler including how to processArgs, shelve, and bundle
  */
@@ -24,18 +76,21 @@ interface Bundler_ {
 	processArgs(args: string[]): Entry[];
 
 	fileIt(filePath: string, fromDir: string, toDir: string): CopyFile;
-	contextIt(filePath: string, fromDir: string, toDir: string): BuildOptions;
+	contextIt(filePath: string, fromDir: string, toDir: string): Context;
 
 	shelving(
 		entries: Entry[],
-	): { contexts: BuildOptions[]; copyFiles: CopyFile[] };
+	): { contexts: Context[]; copyFiles: CopyFile[] };
 
 	bundle(
-		shelve: { contexts: BuildOptions[]; copyFiles: CopyFile[] },
+		shelve: { contexts: Context[]; copyFiles: CopyFile[] },
 	): Promise<void>;
-	//watch(contexts: BuildOptions[]): unknown[];
-	//stop(): void;
-	//dispose(): void;
+	watch(shelve: Shelve): Promise<BuildContext<BuildOptions>[]>;
+	stop(
+		watchPoints: BuildContext<BuildOptions>[],
+		tempDir: string,
+	): Promise<void>;
+	build(args: string[], force: boolean): Promise<void>;
 }
 
 /**
@@ -70,23 +125,16 @@ export class Bundler implements Bundler_ {
 		filePath: string,
 		fromDir: string,
 		toDir: string,
-	): BuildOptions {
+	): Context {
 		return {
 			entryPoints: [join(fromDir, filePath)],
 			outfile: join(toDir, filePath.replace(".ts", ".js")),
-			bundle: true,
-			platform: "browser",
-			format: "esm",
-			target: "esnext",
-			minify: true,
-			sourcemap: true,
-			treeShaking: true,
 		};
 	}
 	shelving(
 		entries: Entry[],
-	): { contexts: BuildOptions[]; copyFiles: CopyFile[] } {
-		const contexts: BuildOptions[] = [];
+	): Shelve {
+		const contexts: Context[] = [];
 		const copyFiles: CopyFile[] = [];
 		entries.forEach(({ type, filePath, fromDir, toDir }) => {
 			if (type == "build") {
@@ -99,24 +147,75 @@ export class Bundler implements Bundler_ {
 	}
 
 	async bundle(
-		shelve: { contexts: BuildOptions[]; copyFiles: CopyFile[] },
+		shelve: Shelve,
 	): Promise<void> {
 		console.log(shelve);
 		for (const context of shelve.contexts) {
-			context.outfile && await ensureFile(context.outfile);
-			await build(context);
+			await ensureFile(context.outfile);
+			await build({ ...context, ...buildOptions });
 		}
 		for (const { from, to } of shelve.copyFiles) {
 			await ensureFile(to);
 			await Deno.copyFile(from, to);
 		}
 	}
+
+	async transpile(shelve: Shelve) {
+		const tempDir = await Deno.makeTempDir();
+		const watchPoints: BuildContext<BuildOptions>[] = [];
+		for (let { entryPoints, outfile } of shelve.contexts) {
+			outfile = join(tempDir, outfile);
+			await ensureFile(outfile);
+			const options: BuildOptions = {
+				entryPoints,
+				outfile,
+				...watchOptions,
+			};
+			const watchPoint = await context(options);
+			watchPoints.push(watchPoint);
+		}
+		for (let { from, to } of shelve.copyFiles) {
+			to = join(tempDir, to);
+			await ensureFile(to);
+			await Deno.copyFile(from, to);
+		}
+		return watchPoints;
+	}
+
+	async watch(shelve: Shelve) {
+		const watchPoints = await this.transpile(shelve);
+		for (const watchPoint of watchPoints) {
+			await watchPoint.watch();
+		}
+		console.log("watching...");
+		return watchPoints;
+	}
+	async stop(watchPoints: BuildContext<BuildOptions>[], tempDir: string) {
+		for (const watchPoint of watchPoints) {
+			await watchPoint.dispose();
+		}
+		await stop();
+		await Deno.remove(tempDir, { recursive: true });
+	}
+
+	async build(args: string[], force: boolean = true) {
+		const entries = this.processArgs(Deno.args);
+		const toDirs = new Set(entries.map((entry) => entry.toDir));
+		for (const toDir of toDirs) {
+			const ok = force || confirm(
+				`Can I delete ${toDir} directory to clean up old files?`,
+			);
+			ok && emptyDir(toDir);
+			!ok && alert(`The directory ${toDir} may have extra/old files`);
+			ok && alert("Next time, give -f switch to bypass this question.");
+		}
+		const shelve = this.shelving(entries);
+		await this.bundle(shelve);
+		await stop();
+	}
 }
 
 if (import.meta.main) {
-	const uiBuild = new Bundler();
-	const entries = uiBuild.processArgs(Deno.args);
-	const shelve = uiBuild.shelving(entries);
-	await uiBuild.bundle(shelve);
-	await stop();
+	const { f, force, d, _ } = parseArgs(Deno.args);
+	new Bundler().build(_ as string[], f || force || d);
 }
