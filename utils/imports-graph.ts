@@ -14,6 +14,24 @@ type Heights = Record<FileName, number>;
 type DirToFiles = Record<DirName, FileName[]>;
 type Edge = { sourceNode: FileName; targetNode: FileName; label: Label };
 
+interface DirI {
+	[name: string]: undefined | DirI;
+}
+
+class Dir {
+	content: DirI = {};
+	add(filePath: string) {
+		const dirNames = filePath.split("/");
+		const _ = dirNames.pop() || "";
+		let innerDir = this.content;
+		for (const dirName of dirNames) {
+			innerDir[dirName] = innerDir[dirName] || {};
+			innerDir = innerDir[dirName];
+		}
+		innerDir[filePath] = undefined;
+	}
+}
+
 async function findTsJsFiles(dir: DirName): Promise<FileName[]> {
 	const gitTrackedFiles = await getGitTrackedFiles(dir);
 	const files: string[] = [];
@@ -92,35 +110,62 @@ function escapeDoubleQuotes(str: FileName): FileName {
 	return str.replace(/"/g, '\\"');
 }
 
-function getDirectoryPath(filePath: FileName): DirName {
-	return path.dirname(filePath);
-}
-
 function createSubgraphName(dirPath: DirName): string {
 	return `cluster_${dirPath.replace(/[^\w]/g, "_")}`;
 }
 
+const writer = {
+	end: () => "\n}",
+	node: (fileName: string, filePath: string, height: number) =>
+		`\n    "${
+			escapeDoubleQuotes(filePath)
+		}"[label="${fileName}", height=${height}, href="${filePath}"];`,
+	startSubgraph: (dirPath: string) =>
+		`\n  subgraph ${createSubgraphName(dirPath)} {\n    label = "${
+			escapeDoubleQuotes(dirPath)
+		}";\n    color = "blue"; fontcolor="blue"; fontsize=24;`,
+	startGraph: () =>
+		`strict digraph TypeScriptImports {\n  node [shape=box, fontsize=16];\n  edge [fontsize=12];\n  rankdir="LR"; nodesep="0.5"; ranksep="2"; labelloc="b";`,
+	edge: (targetNode: string, sourceNode: string, label: string) =>
+		`\n  "${targetNode}" -> "${sourceNode}" ${label};`,
+};
+
 /** for given directory (or the current directory), creates import dependency graph in DOT notation and dumps to stdio */
 export async function toDot(rootDir: DirName = "."): Promise<string> {
+	function createSubgraph(path: string, dir: DirI) {
+		var subgraph: string = writer.startSubgraph(path);
+		for (const [path, content] of Object.entries(dir)) {
+			subgraph += content
+				? createSubgraph(path, content)
+				: writer.node(path.split("/").pop() || "", path, heights[path]);
+		}
+		subgraph += writer.end();
+		return subgraph;
+	}
+
 	let graph: string = "";
 	const files = await findTsJsFiles(rootDir);
-	const dirToFiles = groupFilesByDirectory(files);
+	//const dirToFiles = groupFilesByDirectory(files);
 	const edges = await createEdges(files);
 	const heights = calculateHeights(edges, files);
 
-	graph += "strict digraph TypeScriptImports {";
-	graph += "\n  node [shape=box, fontsize=16];";
-	graph += "\n  edge [fontsize=12];";
-	graph += '\n  rankdir="LR"; nodesep="0.5"; ranksep="2"; labelloc="b";';
+	graph += writer.startGraph();
 
-	graph += outputSubgraphs(dirToFiles, heights);
+	const dir = new Dir();
+	files.forEach((filePath) => dir.add(filePath));
+
+	for (const [path, content] of Object.entries(dir.content)) {
+		graph += content
+			? createSubgraph(path, content)
+			: writer.node(path.split("/").pop() || "", path, heights[path]);
+	}
 
 	// output each edge
-	edges.forEach(({ sourceNode, targetNode, label }) =>
-		graph += `\n  "${targetNode}" -> "${sourceNode}" ${label};`
+	edges.forEach(({ targetNode, sourceNode, label }) =>
+		graph += writer.edge(targetNode, sourceNode, label)
 	);
 
-	graph += "\n}";
+	graph += writer.end();
 	return graph;
 }
 
@@ -146,47 +191,6 @@ function calculateHeights(edges: Edge[], files: FileName[]): Heights {
 		heights[file] = height;
 	});
 	return heights;
-}
-
-function outputSubgraphs(dirToFiles: DirToFiles, heights: Heights) {
-	let graph = "";
-	// Create subgraphs and edges
-	for (const [dirPath, dirFiles] of Object.entries(dirToFiles)) {
-		const subgraphName = createSubgraphName(dirPath);
-		graph += `\n  subgraph ${subgraphName} {`;
-		graph += `\n    label = "${escapeDoubleQuotes(dirPath)}";`;
-		graph += `\n    color = "blue"; fontcolor="blue"; fontsize=24;`;
-
-		for (const file of dirFiles) {
-			// strip file from directory and extension
-			const fileName = file.split("/").pop()?.split(".").at(0) as string;
-
-			// put files into dir subgraphs
-			graph += `\n    "${
-				escapeDoubleQuotes(
-					file,
-				)
-			}"[label="${fileName}", height=${heights[file]}, href="${file}"];`;
-		}
-
-		graph += "\n  }";
-	}
-	return graph;
-}
-
-function groupFilesByDirectory(files: FileName[]): DirToFiles {
-	const dirToFiles: DirToFiles = {};
-
-	// Group files by directory
-	for (const file of files) {
-		const dirPath = getDirectoryPath(file);
-		if (!dirToFiles[dirPath]) {
-			dirToFiles[dirPath] = [];
-		}
-
-		dirToFiles[dirPath].push(file);
-	}
-	return dirToFiles;
 }
 
 async function createEdges(files: string[]): Promise<Edge[]> {
