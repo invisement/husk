@@ -29,7 +29,7 @@ interface DirI {
 }
 
 /** Creates DOT notation graph. The main method is createGraph(dir) */
-export class Graph implements GraphI {
+class Graph implements GraphI {
 	edges: Edge[] = [];
 	nodeHeights: Heights = {};
 	writer = new Writer();
@@ -250,6 +250,16 @@ class Writer {
 
 	createSubgraphName = (dirPath: DirName) =>
 		`cluster_${dirPath.replace(/[^\w]/g, "_")}`;
+}
+
+/** return dot notation for the imports dependency graph for the given rootDirectory*/
+export async function importsGraphDOT(
+	rootDir: string,
+	ignoreFiles: string[],
+	noDir = false,
+) {
+	const graph = await new Graph().createGraph(rootDir, ignoreFiles, noDir);
+	return graph;
 }
 
 /** return the imports dependency graph in svg format as a string */
