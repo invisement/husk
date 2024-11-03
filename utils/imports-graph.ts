@@ -257,7 +257,7 @@ export async function importsGraphDOT(
 	rootDir: string,
 	ignoreFiles: string[],
 	noDir = false,
-) {
+): Promise<string> {
 	const graph = await new Graph().createGraph(rootDir, ignoreFiles, noDir);
 	return graph;
 }
