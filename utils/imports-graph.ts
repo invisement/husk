@@ -1,238 +1,284 @@
 /**
  * For JS/TS files in a given dir (or current dir), creates the DOT graph
- * If git presents, respect git (git ls-files)
- * deno --allow-run=git --alow-read imports-graph.ts
+ * If git presents, it ignores gitignore files (git ls-files)
+ * example1: deno --allow-run=git --alow-read imports-graph.ts . -ignorefile1.ts
+ * or import Graph from this, then graph = await new Graph().createGraph(dir)
+ * to ignore some files, give them as arguments started with dash(-)
+ * example2:  * example: deno run -A imports-graph.ts . -file1.ts -file2.ts +no-dir
+ * example 2 ignores arrows for file1 and file2, and it also does not create subgraph cluster for directories.
  */
 
+/** main interface of this module */
+interface GraphI {
+	createGraph(dir: DirName): Promise<string>; // creates DOT notation graph (graphviz) for given directory
+}
+
 import { walk } from "jsr:@std/fs@1.0.4";
-import * as path from "jsr:@std/path@1.0.6";
+import { basename, dirname, join } from "jsr:@std/path@1.0.6";
+import { instance } from "npm:@viz-js/viz@3.10.0";
+import { parseArgs } from "./helpers.ts";
 
 type FileName = string;
+type FilePath = string;
 type Label = string;
 type DirName = string;
 type Heights = Record<FileName, number>;
-type DirToFiles = Record<DirName, FileName[]>;
 type Edge = { sourceNode: FileName; targetNode: FileName; label: Label };
-
 interface DirI {
 	[name: string]: undefined | DirI;
 }
 
+/** Creates DOT notation graph. The main method is createGraph(dir) */
+export class Graph implements GraphI {
+	edges: Edge[] = [];
+	nodeHeights: Heights = {};
+	writer = new Writer();
+
+	async createGraph(
+		rootDir: DirName = ".",
+		ignoreFiles: FilePath[] = [],
+		noDir = false,
+	) {
+		const root = await new Dir().traverse(rootDir);
+		const edges = await this.createEdges(root.files);
+		const internalEdges = edges.filter(({ sourceNode }) =>
+			root.files.includes(sourceNode) && !ignoreFiles.includes(sourceNode)
+		);
+
+		this.nodeHeights = this.calculateHeights(internalEdges, root.files);
+
+		let graph: string = this.writer.startGraph();
+		if (noDir) graph += this.writer.noDir();
+
+		graph += this.createSubgraph(rootDir, root.tree);
+		internalEdges.forEach(({ targetNode, sourceNode, label }) => {
+			graph += this.writer.edge(sourceNode, targetNode, label);
+		});
+		graph += this.writer.end();
+		return graph;
+	}
+
+	createSubgraph(path: string, dir: DirI) {
+		let subgraph: string = this.writer.startSubgraph(path);
+		for (const [path, content] of Object.entries(dir)) {
+			// empty content means path is a file
+			subgraph += content
+				? this.createSubgraph(path, content)
+				: this.writer.node(
+					path,
+					this.nodeHeights[path],
+				);
+		}
+		subgraph += this.writer.end();
+		return subgraph;
+	}
+
+	calculateHeights(edges: Edge[], files: FileName[]) {
+		const sourceCounts: Record<FileName, number> = {};
+		const targetCounts: Record<FileName, number> = {};
+		const nodeHeights: Heights = {};
+
+		// make initial values zero
+		files.forEach((file) => {
+			sourceCounts[file] = 0;
+			targetCounts[file] = 0;
+		});
+
+		for (const { sourceNode, targetNode, label } of edges) {
+			const n = label.split("\n").length;
+			sourceCounts[sourceNode] += 1 + n / 2;
+			targetCounts[targetNode] += 1 + n / 2;
+		}
+
+		files.forEach((file) => {
+			const height = Math.max(sourceCounts[file], targetCounts[file]) *
+					0.25 + .5;
+			nodeHeights[file] = height;
+		});
+		return nodeHeights;
+	}
+
+	async createEdges(files: FilePath[]) {
+		const edges: Edge[] = [];
+		const promises = files.map(async (targetNode) => {
+			const file = new File(targetNode);
+			const imports = await file.imports();
+			for (const [sourceNode, labels] of Object.entries(imports)) {
+				const label = labels.join("\n");
+				edges.push({ sourceNode, targetNode, label });
+			}
+		});
+		await Promise.all(promises);
+		return edges;
+	}
+}
+
+class File {
+	name: FilePath;
+	_imports: Record<FilePath, Label[]> = {};
+
+	constructor(name: FilePath) {
+		this.name = name;
+	}
+	async imports() {
+		const code = await Deno.readTextFile(this.name);
+		this.extractImports(code);
+		this.extractDynamicImports(code);
+		return this._imports;
+	}
+
+	extractImports(code: string) {
+		const importRegex = /^(import|export)\s+([^=]*?)"(.+?)"/gm;
+		const match = code.matchAll(importRegex);
+		for (let [, , items, sourceFile] of match) {
+			if (sourceFile.startsWith(".")) {
+				sourceFile = join(dirname(this.name), sourceFile);
+			}
+			// remove unwanted keywords
+			items = items
+				.replaceAll("{", "")
+				.replaceAll("}", "")
+				.replaceAll("from ", "")
+				.replaceAll("type ", "");
+			const labels: Label[] = items.split(",").map((item) => item.trim());
+			this._imports[sourceFile] = this._imports[sourceFile] || [];
+			this._imports[sourceFile].push(...labels);
+		}
+	}
+	extractDynamicImports(code: string) {
+		const importRegex = /(?:{(.+)}\s*=\s*await )?\s*import\s*\("(.+)"\)/g;
+		const match = code.matchAll(importRegex);
+		for (let [, items, sourceFile] of match) {
+			if (sourceFile.startsWith(".")) {
+				sourceFile = join(dirname(this.name), sourceFile);
+			}
+			const labels: Label[] = items.split(",").map((item) => item.trim());
+			this._imports[sourceFile] = this._imports[sourceFile] || [];
+			this._imports[sourceFile].push(...labels);
+		}
+	}
+}
+
 class Dir {
-	content: DirI = {};
+	tree: DirI = {};
+	files: FilePath[] = [];
+
 	add(filePath: string) {
 		const dirNames = filePath.split("/");
 		const _ = dirNames.pop() || "";
-		let innerDir = this.content;
+		let innerDir = this.tree;
 		for (const dirName of dirNames) {
 			innerDir[dirName] = innerDir[dirName] || {};
 			innerDir = innerDir[dirName];
 		}
 		innerDir[filePath] = undefined;
 	}
-}
-
-async function findTsJsFiles(dir: DirName): Promise<FileName[]> {
-	const gitTrackedFiles = await getGitTrackedFiles(dir);
-	const files: string[] = [];
-	for await (const entry of walk(dir, { exts: [".ts", ".js"] })) {
-		if (entry.isFile && gitTrackedFiles.includes(entry.path)) {
-			files.push(entry.path);
-		}
+	async traverse(dir: DirName) {
+		this.files = await this.findTsJsFiles(dir);
+		this.files.forEach((filePath) => this.add(filePath));
+		return this;
 	}
-	return files;
-}
-
-async function getGitTrackedFiles(dir: DirName): Promise<FileName[]> {
-	try {
-		const command = new Deno.Command("git", {
-			args: ["ls-files", "-co", "--exclude-standard"],
-			cwd: dir,
-			stdout: "piped",
-		});
-		const { stdout } = await command.output();
-		const files = new TextDecoder().decode(stdout).trim().split("\n");
-		//process.close();
-		return files.map((file) => path.join(dir, file));
-	} catch (error) {
-		console.error("Error running git command:", error);
+	async findTsJsFiles(dir: DirName): Promise<FilePath[]> {
+		const gitTrackedFiles = await this.getGitTrackedFiles(dir);
 		const files: string[] = [];
-		for await (const file of walk(dir)) {
-			files.push(file.path);
+		for await (const entry of walk(dir, { exts: [".ts", ".js", ".mjs"] })) {
+			if (entry.isFile && gitTrackedFiles.includes(entry.path)) {
+				files.push(entry.path);
+			}
 		}
 		return files;
 	}
-}
-
-function extractImports(content: string): Array<[FileName, Label]> {
-	const importRegex =
-		/import\s+(?:type\s+)?(?:(\w+)(?:\s+as\s+(\w+))?|{([\s\S]*?)}|\*\s+as\s+(\w+))?\s*(?:from\s*)?["']([^"']+)["']/g;
-	const imports: Array<[string, string]> = [];
-	let match;
-	while ((match = importRegex.exec(content)) !== null) {
-		const [
-			,
-			defaultImport,
-			aliasedImport,
-			namedImports,
-			namespaceImport,
-			importPath,
-		] = match;
-		let importItems = "";
-		if (defaultImport) {
-			importItems = aliasedImport
-				? `${defaultImport} as ${aliasedImport}`
-				: defaultImport;
-		} else if (namedImports) {
-			importItems = namedImports
-				.split(",")
-				.map((item) => item.trim())
-				.join("\\n");
-		} else if (namespaceImport) {
-			importItems = `* as ${namespaceImport}`;
+	async getGitTrackedFiles(dir: DirName): Promise<FilePath[]> {
+		try {
+			const command = new Deno.Command("git", {
+				args: ["ls-files", "-co", "--exclude-standard"],
+				cwd: dir,
+				stdout: "piped",
+			});
+			const { stdout } = await command.output();
+			const files = new TextDecoder().decode(stdout).trim().split("\n");
+			//process.close();
+			return files.map((file) => join(dir, file));
+		} catch (error) {
+			console.error("Error running git command:", error);
+			const files: string[] = [];
+			for await (const file of walk(dir)) {
+				files.push(file.path);
+			}
+			return files;
 		}
-		imports.push([importItems, importPath]);
 	}
-	return imports;
 }
 
-function normalizeImportPath(
-	basePath: DirName,
-	importPath: FileName,
-): FileName {
-	if (importPath.startsWith(".")) {
-		return path.normalize(path.join(path.dirname(basePath), importPath));
-	}
-	return importPath;
-}
+class Writer {
+	level = 0;
 
-function escapeDoubleQuotes(str: FileName): FileName {
-	return str.replace(/"/g, '\\"');
-}
-
-function createSubgraphName(dirPath: DirName): string {
-	return `cluster_${dirPath.replace(/[^\w]/g, "_")}`;
-}
-
-const writer = {
-	end: () => "\n}",
-	node: (fileName: string, filePath: string, height: number) =>
-		`\n    "${
-			escapeDoubleQuotes(filePath)
-		}"[label="${fileName}", height=${height}, href="${filePath}"];`,
-	startSubgraph: (dirPath: string) =>
-		`\n  subgraph ${createSubgraphName(dirPath)} {\n    label = "${
-			escapeDoubleQuotes(dirPath)
-		}";\n    color = "blue"; fontcolor="blue"; fontsize=24;`,
-	startGraph: () =>
-		`strict digraph TypeScriptImports {\n  node [shape=box, fontsize=16];\n  edge [fontsize=12];\n  rankdir="LR"; nodesep="0.5"; ranksep="2"; labelloc="b";`,
-	edge: (targetNode: string, sourceNode: string, label: string) =>
-		`\n  "${targetNode}" -> "${sourceNode}" ${label};`,
-};
-
-/** for given directory (or the current directory), creates import dependency graph in DOT notation and dumps to stdio */
-export async function toDot(rootDir: DirName = "."): Promise<string> {
-	function createSubgraph(path: string, dir: DirI) {
-		var subgraph: string = writer.startSubgraph(path);
-		for (const [path, content] of Object.entries(dir)) {
-			subgraph += content
-				? createSubgraph(path, content)
-				: writer.node(path.split("/").pop() || "", path, heights[path]);
-		}
-		subgraph += writer.end();
-		return subgraph;
+	get indent() {
+		return "\t".repeat(this.level);
 	}
 
-	let graph: string = "";
-	const files = await findTsJsFiles(rootDir);
-	//const dirToFiles = groupFilesByDirectory(files);
-	const edges = await createEdges(files);
-	const heights = calculateHeights(edges, files);
-
-	graph += writer.startGraph();
-
-	const dir = new Dir();
-	files.forEach((filePath) => dir.add(filePath));
-
-	for (const [path, content] of Object.entries(dir.content)) {
-		graph += content
-			? createSubgraph(path, content)
-			: writer.node(path.split("/").pop() || "", path, heights[path]);
+	startGraph() {
+		this.level++;
+		return `digraph imports {\n${this.indent}graph [ rankdir="LR"; labelloc="b"; concentrate=true; overlap=false; splines=true;]\n${this.indent}node [shape=box, fontsize=16];\n${this.indent}edge [fontsize=12;];`;
 	}
 
-	// output each edge
-	edges.forEach(({ targetNode, sourceNode, label }) =>
-		graph += writer.edge(targetNode, sourceNode, label)
-	);
+	noDir = () => `\n${this.indent}clusterrank="none";`;
 
-	graph += writer.end();
-	return graph;
-}
-
-function calculateHeights(edges: Edge[], files: FileName[]): Heights {
-	const sourceCounts: Record<FileName, number> = {};
-	const targetCounts: Record<FileName, number> = {};
-	const heights: Heights = {};
-
-	// make initial values zero
-	files.forEach((file) => {
-		sourceCounts[file] = 0;
-		targetCounts[file] = 0;
-	});
-
-	for (const { sourceNode, targetNode } of edges) {
-		sourceCounts[sourceNode]++;
-		targetCounts[targetNode]++;
+	startSubgraph(dirPath: string) {
+		const x = this.indent;
+		this.level++;
+		return `\n${x}subgraph ${
+			this.createSubgraphName(dirPath)
+		} {\n${this.indent}label = "${dirPath}"; fontsize=24; `;
 	}
 
-	files.forEach((file) => {
-		const height = Math.max(sourceCounts[file], targetCounts[file], 1) *
-			0.5;
-		heights[file] = height;
-	});
-	return heights;
+	node = (filePath: string, height: number) =>
+		`\n${this.indent}"${filePath}"[label="${
+			basename(filePath)
+		}"; height=${height}; href="${filePath}"; tooltip="${filePath}"];`;
+
+	edge = (
+		targetNode: string,
+		sourceNode: string,
+		label: string,
+	) => `\n${this.indent}"${targetNode}" -> "${sourceNode}" [label="${label}"];`;
+
+	end = () => {
+		this.level--;
+		return `\n${this.indent}}`;
+	};
+
+	createSubgraphName = (dirPath: DirName) =>
+		`cluster_${dirPath.replace(/[^\w]/g, "_")}`;
 }
 
-async function createEdges(files: string[]): Promise<Edge[]> {
-	const edges: Edge[] = [];
-	// create edges for each file
-	for (const file of files) {
-		const content = await Deno.readTextFile(file);
-		const imports = extractImports(content)
-			// Normalize path
-			.map(([importItem, importPath]) => {
-				const normalizedImportPath = normalizeImportPath(
-					file,
-					importPath,
-				);
-				return [importItem, normalizedImportPath];
-			})
-			// filter non internal modules (like node_modules)
-			.filter(([_, importPath]) => files.includes(importPath));
-
-		// create edges for this file
-		imports.map(([importItems, importPath]) => {
-			const edge = createEdge(file, importItems, importPath);
-			edges.push(edge);
-		});
-	}
-	return edges;
+/** return the imports dependency graph in svg format as a string */
+export async function importsGraphSVG(
+	rootDir: string,
+	ignoreFiles: string[],
+	noDir = false,
+): Promise<string> {
+	const graph = await new Graph().createGraph(rootDir, ignoreFiles, noDir);
+	const svgString = (await instance()).renderString(graph, { format: "svg" });
+	return svgString;
 }
 
-function createEdge(file: string, importItems: string, importPath: string) {
-	const sourceNode = escapeDoubleQuotes(file);
-	const targetNode = escapeDoubleQuotes(importPath);
+/** Parse arguments and create svg string of the imports dependency graph */
+export async function importsGraphCLI(argList: string[]): Promise<string> {
+	const args = parseArgs(argList);
+	// ignored-files starts with -
+	const ignoreFiles = args["-"].map((arg) => arg.replace(/^\.\//, ""));
 
-	const label = importItems
-		? `[label="${escapeDoubleQuotes(importItems)}"]`
-		: "";
+	// +no-dir argument means remove directory subgraphs
+	const noDir = args["+"].includes("no-dir");
 
-	const edge: Edge = { sourceNode, targetNode, label };
-	return edge;
+	// first mass argument is rootDir
+	const rootDir = args["_"].at(0) || ".";
+
+	return await importsGraphSVG(rootDir, ignoreFiles, noDir);
 }
 
 if (import.meta.main) {
-	const rootDir = Deno.args[0] || ".";
-	const graph = await toDot(rootDir);
-	console.log(graph);
+	const svgString = await importsGraphCLI(Deno.args);
+	console.log(svgString);
 }
