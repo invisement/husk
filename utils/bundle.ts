@@ -64,7 +64,7 @@ const buildOptions: BuildOptions = {
 		".json": "copy",
 		".jpg": "copy",
 		".png": "copy",
-		"svg": "dataurl",
+		".svg": "dataurl",
 		".data": "binary",
 	},
 };
