@@ -8,7 +8,7 @@ defaultOptions = {method: 'GET', params: true, query: false, body: false, origin
 
 /** Options type for optional argument. The default values are {method: 'GET', params: true} */
 
-import { serveFile } from "jsr:@std/http/file-server";
+import { serveFile } from "jsr:@std/http@1.0.9/file-server";
 type HttpMethod =
 	| "GET"
 	| "POST"
