@@ -39,7 +39,7 @@ class Graph implements GraphI {
 		ignoreFiles: FilePath[] = [],
 		noDir = false,
 	) {
-		const root = await new Dir().traverse(rootDir);
+		const root = await new Dir(ignoreFiles).traverse(rootDir);
 		const edges = await this.createEdges(root.files);
 		const internalEdges = edges.filter(({ sourceNode }) =>
 			root.files.includes(sourceNode) && !ignoreFiles.includes(sourceNode)
@@ -162,6 +162,13 @@ class File {
 class Dir {
 	tree: DirI = {};
 	files: FilePath[] = [];
+	ignorePatterns: RegExp[] = [];
+
+	constructor(ignoreFiles: string[] = []) {
+		this.ignorePatterns = ignoreFiles.map((file) =>
+			new RegExp(`^${file.replaceAll("*", ".*")}$`)
+		);
+	}
 
 	add(filePath: string) {
 		const dirNames = filePath.split("/");
@@ -175,6 +182,12 @@ class Dir {
 	}
 	async traverse(dir: DirName) {
 		this.files = await this.findTsJsFiles(dir);
+
+		//filter ignore files
+		this.files = this.files.filter((file) =>
+			this.ignorePatterns.every((regex) => !regex.test(file))
+		);
+
 		this.files.forEach((filePath) => this.add(filePath));
 		return this;
 	}

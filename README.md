@@ -31,19 +31,14 @@ You can also add static serving routes like:
 For a usage example, look into
 [router test example](./how-to-use/router-example.ts)
 
-## Utils
+## Imports Dependency Graph
 
-The utils are cli utilities that can be run from the command line without
-installation.
-
-### Imports Dependency Graph
-
-To create a dependency graph for you internal modules:
+To create a dependency graph (in svg) for you internal modules:
 
 ```sh
 deno run --allow-read=<dir> --allow-run=git jsr:@invisement/husk@^0/imports-graph <dir> 
 # or to graph current dir and save it to clipboard (in linux change pbcopy to xclip)
-deno run -A jsr:@invisement/husk@^0/imports-graph | pbcopy
+deno run -A jsr:@invisement/husk@^0/imports-graph > graph.svg
 ```
 
 - It creates the imports inter-dependency of your TS and JS (ESM) modules and
@@ -51,23 +46,20 @@ deno run -A jsr:@invisement/husk@^0/imports-graph | pbcopy
 - `<dir>` is the root of the directory to find all TS files (recursively). If
   not provided, it uses the current directory.
 - If you run it from a git repo, it respects your .gitignore.
-- You can paste the result in one of the online Graphviz tools such as:
-  [graph viewer](https://magjac.com/graphviz-visual-editor/)
-
-You can install [graphviz](https://graphviz.org/doc/info/command.html) and
-generate the .svg graph of your internal dependencies.
+- To exclude any file or folder from the dependency-graph, provide
+  -regex-pattern argument
+- To ignore directories (graph all ts/js files without their directory
+  subgraphs), provide +no-dir argument.
 
 ```sh
-deno run -A jsr:@invisement/husk@^0/imports-graph . | dot -Tsvg > ./documentation/my-imports-graph.svg
+deno run -A jsr:@invisement/husk@^0/imports-graph . -*config.ts -ui-dist/* +no-dir > graph.svg
 ```
 
-You can also directly import it into your TS files for more advanced use cases:
+- It ignores all git ignore files, excludes all config.ts files in any
+  directory, ignore all files in directory ui-dist, and skips using directories
+  as subgraphs.
 
-```ts
-import { toDot } from "jsr:@invisement/husk";
-```
-
-### UI Builder
+## UI Builder
 
 The goal is that you develop UI and for bundling you run one line (without
 install) to have ui ready for distribution/production.
