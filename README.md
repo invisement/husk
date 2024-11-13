@@ -59,21 +59,30 @@ deno run -A jsr:@invisement/husk@^0/imports-graph . -*config.ts -ui-dist/* +no-d
   directory, ignore all files in directory ui-dist, and skips using directories
   as subgraphs.
 
-## UI Builder
+## UI Transpiler
 
-The goal is that you develop UI and for bundling you run one line (without
-install) to have ui ready for distribution/production.
+Provides utility to watch (and rebuild and rebundler) ui, and to build/bundle
+ui.
 
-The util file `util/bundle.ts` is a UI Build tool using esbuild.
-
-- It transpiles and bundles ts and js files
-- It copies any other file without any change
+To build:
 
 ```sh
-deno run -A jsr:@invisement/husk@^0/bundle fromDir=toDir file1 file2 file3
-## example:
-deno run -A jsr:@invisement/husk@^0/bundle ./src=./dist index.html index.js index.css service/my-file.ts
+deno run -A jsr:@invisement/husk/transpile-ui
 ```
 
-The above command bundles or copies mentioned files from src to dist (while
-keeping their file structures)
+To watch:
+
+```ts
+// server.ts
+import { watchUI } from "jsr:@invisement/husk/transpile-ui";
+import { uiEntrypoints, uiOutDir, uiSourceDir } from "./config.ts";
+
+const isDev = Deno.args.includes("--watch-ui");
+const uiDir = isDev ? await watchUI(uiSourceDir, uiEntrypoints) : uiOutDir;
+console.log("UI OUt Directory is", uiDir);
+
+// Serve ui and static files
+router.push("/", `${uiDir}/index.html`);
+router.push("/index.:ext", `${uiDir}/index.:ext`);
+router.push("/ui/:path*", `${uiDir}/:path`);
+```
