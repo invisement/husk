@@ -6,7 +6,7 @@ import { ensureFile } from "jsr:@std/fs@1.0.5";
 export async function watchUI(
 	sourceDir: string,
 	files: string[] = ["index.html", "index.css", "index.js"],
-) {
+): Promise<string> {
 	const outdir = await Deno.makeTempDir();
 	const transpiler = new Transpiler(sourceDir, files, outdir);
 	await transpiler.build();
@@ -21,7 +21,7 @@ export class Transpiler {
 	traspiles: string[] = [];
 	copies: string[] = [];
 
-	isTraspile = (file: string) =>
+	private isTraspile = (file: string) =>
 		["ts", "js", "mjs"].includes(file.split(".").pop() || "");
 
 	constructor(sourceDir: string, files: string[], outDir: string) {
@@ -33,7 +33,7 @@ export class Transpiler {
 		}
 	}
 
-	async bundleIt(minify: boolean) {
+	async bundleIt(minify: boolean): Promise<void> {
 		for (const file of this.traspiles) {
 			const { code } = await bundle(join(this.sourceDir, file), {
 				minify,
@@ -53,7 +53,7 @@ export class Transpiler {
 		}
 	}
 
-	async build(minify = false) {
+	async build(minify = false): Promise<string> {
 		const promises = this.copies.map(async (file) => {
 			const outFile = join(this.outDir, basename(file));
 			await ensureFile(outFile);
@@ -69,9 +69,10 @@ export class Transpiler {
 		return this.outDir;
 	}
 
-	delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+	private delay = (ms: number) =>
+		new Promise((resolve) => setTimeout(resolve, ms));
 
-	async watch() {
+	async watch(): Promise<void> {
 		const watcher = Deno.watchFs(this.sourceDir);
 		const check = debounce(async (event: Deno.FsEvent) => {
 			if (event.kind == "modify") {
