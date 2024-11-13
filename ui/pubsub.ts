@@ -23,12 +23,9 @@ export class PubSub<Type> {
 	pub(newValue: Type): void {
 		this._value = newValue;
 
-		console.log("new value is published");
-
 		// run each subscriber and remove if throws error
 		this._subscribers.forEach((func, key) => {
 			try {
-				console.log("subscriber is called", func);
 				func(newValue);
 			} catch (e) {
 				console.error(

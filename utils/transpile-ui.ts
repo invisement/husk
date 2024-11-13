@@ -76,7 +76,6 @@ export class Transpiler {
 		const watcher = Deno.watchFs(this.sourceDir);
 		const check = debounce(async (event: Deno.FsEvent) => {
 			if (event.kind == "modify") {
-				console.log("rebuilding ui for dev");
 				await this.bundleIt(false);
 				//const result = await this.transpiler(event.paths[0]);
 				//console.log(result);
