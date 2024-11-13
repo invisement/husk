@@ -4,9 +4,9 @@
 	"license": "MIT",
 	"exports": {
 		".": "./mod.ts",
-		"./bundle": "./utils/bundle.ts",
 		"./imports-graph": "./utils/imports-graph.ts",
 		"./router": "./server/router.ts",
+		"./transpile-ui": "./utils/transpile-ui.ts",
 		"./ui": "./ui/mod.ts"
 	}
 }
