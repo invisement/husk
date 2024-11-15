@@ -50,7 +50,7 @@ class Graph implements GraphI {
 		let graph: string = this.writer.startGraph();
 		if (noDir) graph += this.writer.noDir();
 
-		graph += this.createSubgraph(rootDir, root.tree);
+		graph += this.createSubgraph(rootDir, root.tree, true);
 		internalEdges.forEach(({ targetNode, sourceNode, label }) => {
 			graph += this.writer.edge(sourceNode, targetNode, label);
 		});
@@ -58,8 +58,8 @@ class Graph implements GraphI {
 		return graph;
 	}
 
-	createSubgraph(path: string, dir: DirI) {
-		let subgraph: string = this.writer.startSubgraph(path);
+	createSubgraph(path: string, dir: DirI, isRoot = false) {
+		let subgraph: string = isRoot ? "" : this.writer.startSubgraph(path);
 		for (const [path, content] of Object.entries(dir)) {
 			// empty content means path is a file
 			subgraph += content
@@ -69,7 +69,7 @@ class Graph implements GraphI {
 					this.nodeHeights[path],
 				);
 		}
-		subgraph += this.writer.end();
+		subgraph += isRoot ? "" : this.writer.end();
 		return subgraph;
 	}
 
@@ -232,7 +232,7 @@ class Writer {
 
 	startGraph() {
 		this.level++;
-		return `digraph imports {\n${this.indent}graph [ rankdir="LR"; labelloc="b"; concentrate=true; overlap=false; splines=true;]\n${this.indent}node [shape=box, fontsize=16];\n${this.indent}edge [fontsize=12;];`;
+		return `digraph imports {\n${this.indent}graph [ rankdir="LR"; labelloc="b"; concentrate=true; overlap=false; splines=true; color=blue]\n${this.indent}node [shape=box, fontsize=16, color=blue];\n${this.indent}edge [fontsize=12, color=blue];`;
 	}
 
 	noDir = () => `\n${this.indent}clusterrank="none";`;
