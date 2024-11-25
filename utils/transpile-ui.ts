@@ -4,94 +4,106 @@ import { basename, join } from "jsr:@std/path@1.0.8";
 import { ensureFile } from "jsr:@std/fs@1.0.5";
 
 export async function watchUI(
-	sourceDir: string,
-	files: string[] = ["index.html", "index.css", "index.js"],
+  sourceDir: string,
+  files: string[] = ["index.html", "index.css", "index.ts"],
+  importMap: string = "./deno.json",
 ): Promise<string> {
-	const outdir = await Deno.makeTempDir();
-	const transpiler = new Transpiler(sourceDir, files, outdir);
-	await transpiler.build();
-	transpiler.watch();
-	return outdir;
+  const outdir = await Deno.makeTempDir();
+  const transpiler = new Transpiler(sourceDir, files, outdir, importMap);
+  await transpiler.build();
+  transpiler.watch();
+  return outdir;
 }
 
 export class Transpiler {
-	sourceDir: string;
-	outDir: string;
+  sourceDir: string;
+  outDir: string;
+  importMap: string = "./deno.json";
 
-	traspiles: string[] = [];
-	copies: string[] = [];
+  traspiles: { source: string; target: string }[] = [];
+  copies: string[] = [];
 
-	private isTraspile = (file: string) =>
-		["ts", "js", "mjs"].includes(file.split(".").pop() || "");
+  private isTraspile = (file: string) =>
+    ["ts", "js", "mjs"].includes(file.split(".").pop() || "");
 
-	constructor(sourceDir: string, files: string[], outDir: string) {
-		this.sourceDir = sourceDir;
-		this.outDir = outDir;
-		for (const file of files) {
-			if (this.isTraspile(file)) this.traspiles.push(file);
-			else this.copies.push(file);
-		}
-	}
+  constructor(
+    sourceDir: string,
+    files: string[],
+    outDir: string,
+    importMap: string,
+  ) {
+    this.sourceDir = sourceDir;
+    this.outDir = outDir;
+    this.importMap = importMap;
 
-	async bundleIt(minify: boolean): Promise<void> {
-		for (const file of this.traspiles) {
-			const { code } = await bundle(join(this.sourceDir, file), {
-				minify,
-				importMap: {
-					imports: {
-						"lit": "https://esm.sh/lit",
-						"lit/": "https://esm.sh/lit/",
-					},
-				},
-			});
-			const outFile = join(this.outDir, file);
-			await ensureFile(outFile);
-			Deno.writeTextFile(
-				outFile,
-				code,
-			);
-		}
-	}
+    for (const file of files) {
+      if (this.isTraspile(file)) {
+        this.traspiles.push({
+          source: join(this.sourceDir, file),
+          target: join(this.outDir, file.replace(".ts", ".js")),
+        });
+      } else this.copies.push(file);
+    }
+  }
 
-	async build(minify = false): Promise<string> {
-		const promises = this.copies.map(async (file) => {
-			const outFile = join(this.outDir, basename(file));
-			await ensureFile(outFile);
-			Deno.copyFile(
-				join(this.sourceDir, file),
-				outFile,
-			);
-		});
+  async bundleIt(minify: boolean): Promise<void> {
+    for (const { source, target } of this.traspiles) {
+      const { code } = await bundle(source, {
+        minify,
+        importMap: this.importMap,
+      });
+      await ensureFile(target);
+      Deno.writeTextFile(
+        target,
+        code,
+      );
+    }
+  }
 
-		this.bundleIt(minify);
+  async build(minify = false): Promise<string> {
+    const promises = this.copies.map(async (file) => {
+      const outFile = join(this.outDir, basename(file));
+      await ensureFile(outFile);
+      Deno.copyFile(
+        join(this.sourceDir, file),
+        outFile,
+      );
+    });
 
-		await Promise.all(promises);
-		return this.outDir;
-	}
+    this.bundleIt(minify);
 
-	private delay = (ms: number) =>
-		new Promise((resolve) => setTimeout(resolve, ms));
+    await Promise.all(promises);
+    return this.outDir;
+  }
 
-	async watch(): Promise<void> {
-		const watcher = Deno.watchFs(this.sourceDir);
-		const check = debounce(async (event: Deno.FsEvent) => {
-			if (event.kind == "modify") {
-				await this.bundleIt(false);
-				//const result = await this.transpiler(event.paths[0]);
-				//console.log(result);
-			}
-		}, 200);
+  private delay = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
-		for await (const event of watcher) {
-			check(event);
-		}
-	}
+  async watch(): Promise<void> {
+    const watcher = Deno.watchFs(this.sourceDir);
+    const check = debounce(async (_: Deno.FsEvent) => {
+      //if (event.kind == "modify") {
+      await this.bundleIt(false);
+      //const result = await this.transpiler(event.paths[0]);
+      //console.log(result);
+      //}
+    }, 200);
+
+    for await (const event of watcher) {
+      check(event);
+    }
+  }
 }
 
 if (import.meta.main) {
-	const { uiSourceDir, uiEntrypoints, uiOutDir } = await import(
-		"../config.ts"
-	);
-	const transpiler = new Transpiler(uiSourceDir, uiEntrypoints, uiOutDir);
-	await transpiler.build(true);
+  const { uiSourceDir, uiEntrypoints, uiOutDir } = await import(
+    "../config.ts"
+  );
+  const transpiler = new Transpiler(
+    uiSourceDir,
+    uiEntrypoints,
+    uiOutDir,
+    "./deno.json",
+  );
+  await transpiler.build(true);
 }
