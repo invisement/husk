@@ -33,7 +33,7 @@ class Graph implements GraphI {
 	edges: Edge[] = [];
 	nodeHeights: Heights = {};
 	writer = new Writer();
-	reverse = false;
+	reverse: boolean = false;
 
 	async createGraph(
 		rootDir: DirName = ".",
@@ -41,7 +41,6 @@ class Graph implements GraphI {
 		noDir = false,
 		reverse = false,
 	) {
-		this.reverse = reverse;
 		const root = await new Dir(ignoreFiles).traverse(rootDir);
 		const edges = await this.createEdges(root.files);
 		const internalEdges = edges.filter(({ sourceNode }) =>
@@ -55,7 +54,7 @@ class Graph implements GraphI {
 
 		graph += this.createSubgraph(rootDir, root.tree, true);
 		internalEdges.forEach(({ targetNode, sourceNode, label }) => {
-			graph += this.writer.edge(sourceNode, targetNode, label);
+			graph += this.writer.edge(sourceNode, targetNode, label, reverse);
 		});
 		graph += this.writer.end();
 		return graph;
@@ -257,7 +256,8 @@ class Writer {
 		targetNode: string,
 		sourceNode: string,
 		label: string,
-	) => this.reverse
+		reverse = false,
+	) => reverse
 		? `\n${this.indent}"${targetNode}" -> "${sourceNode}" [label="${label}"];`
 		: `\n${this.indent}"${sourceNode}" -> "${targetNode}" [label="${label}"];`;
 
