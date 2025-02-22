@@ -33,12 +33,15 @@ class Graph implements GraphI {
 	edges: Edge[] = [];
 	nodeHeights: Heights = {};
 	writer = new Writer();
+	reverse = false;
 
 	async createGraph(
 		rootDir: DirName = ".",
 		ignoreFiles: FilePath[] = [],
 		noDir = false,
+		reverse = false,
 	) {
+		this.reverse = reverse;
 		const root = await new Dir(ignoreFiles).traverse(rootDir);
 		const edges = await this.createEdges(root.files);
 		const internalEdges = edges.filter(({ sourceNode }) =>
@@ -254,7 +257,9 @@ class Writer {
 		targetNode: string,
 		sourceNode: string,
 		label: string,
-	) => `\n${this.indent}"${targetNode}" -> "${sourceNode}" [label="${label}"];`;
+	) => this.reverse
+		? `\n${this.indent}"${targetNode}" -> "${sourceNode}" [label="${label}"];`
+		: `\n${this.indent}"${sourceNode}" -> "${targetNode}" [label="${label}"];`;
 
 	end = () => {
 		this.level--;
@@ -270,8 +275,14 @@ export async function importsGraphDOT(
 	rootDir: string,
 	ignoreFiles: string[],
 	noDir = false,
+	reverse = false,
 ): Promise<string> {
-	const graph = await new Graph().createGraph(rootDir, ignoreFiles, noDir);
+	const graph = await new Graph().createGraph(
+		rootDir,
+		ignoreFiles,
+		noDir,
+		reverse,
+	);
 	return graph;
 }
 
@@ -280,8 +291,14 @@ export async function importsGraphSVG(
 	rootDir: string,
 	ignoreFiles: string[],
 	noDir = false,
+	reverse = false,
 ): Promise<string> {
-	const graph = await new Graph().createGraph(rootDir, ignoreFiles, noDir);
+	const graph = await new Graph().createGraph(
+		rootDir,
+		ignoreFiles,
+		noDir,
+		reverse,
+	);
 	const svgString = (await instance()).renderString(graph, { format: "svg" });
 	return svgString;
 }
@@ -294,11 +311,12 @@ export async function importsGraphCLI(argList: string[]): Promise<string> {
 
 	// +no-dir argument means remove directory subgraphs
 	const noDir = args["+"].includes("no-dir");
+	const reverse = args["+"].includes("reverse");
 
 	// first mass argument is rootDir
 	const rootDir = args["_"].at(0) || ".";
 
-	return await importsGraphSVG(rootDir, ignoreFiles, noDir);
+	return await importsGraphSVG(rootDir, ignoreFiles, noDir, reverse);
 }
 
 if (import.meta.main) {

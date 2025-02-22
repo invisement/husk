@@ -52,12 +52,12 @@ deno run -A jsr:@invisement/husk@^0/imports-graph > graph.svg
   subgraphs), provide +no-dir argument.
 
 ```sh
-deno run -A jsr:@invisement/husk@^0/imports-graph . -*config.ts -ui-dist/* +no-dir > graph.svg
+deno run -A jsr:@invisement/husk@^0/imports-graph . -config.ts -ui-dist/* +no-dir +reverse > graph.svg
 ```
 
-- It ignores all git ignore files, excludes all config.ts files in any
-  directory, ignore all files in directory ui-dist, and skips using directories
-  as subgraphs.
+- It ignores all git ignore files, excludes all config.ts files in any directory
+  (-config.ts), ignore all files in directory ui-dist (-ui-dist), skips using
+  directories as subgraphs (+no-dir), and draws reverse arrows (+reverse).
 
 ## UI Transpiler
 
