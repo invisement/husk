@@ -308,14 +308,14 @@ export async function importsGraphSVG(
 export async function importsGraphCLI(argList: string[]): Promise<string> {
   const args = parseArgs(argList);
   // ignored-files starts with -
-  const ignoreFiles = args["-"].map((arg) => arg.replace(/^\.\//, ""));
+  const ignoreFiles = args["-"].map((arg: string) => arg.replace(/^\.\//, ""));
 
   // +no-dir argument means remove directory subgraphs
   const noDir = args["+"].includes("no-dir");
   const reverse = args["+"].includes("reverse");
 
   // first mass argument is rootDir
-  const rootDir = args["_"].at(0) || ".";
+  const rootDir = args["_"].at(0)?.toString() || ".";
 
   return await importsGraphSVG(rootDir, ignoreFiles, noDir, reverse);
 }
