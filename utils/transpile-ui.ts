@@ -98,7 +98,7 @@ export class Transpiler {
 
 if (import.meta.main) {
   const flags = parseArgs(Deno.args, { string: ["config"] });
-  const config = flags.config || "../config.ts";
+  const config = flags.config ? join(Deno.cwd(), flags.config) : "../config.ts";
   const { uiSourceDir, uiEntrypoints, uiOutDir } = await import(config);
   const transpiler = new Transpiler(
     uiSourceDir,
