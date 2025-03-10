@@ -2,7 +2,7 @@ import { bundle } from "jsr:@deno/emit@0.46.0";
 import { debounce } from "jsr:@std/async@1.0.8/debounce";
 import { basename, join } from "jsr:@std/path@1.0.8";
 import { ensureFile } from "jsr:@std/fs@1.0.5";
-import { parseArgs } from "jsr:@std/cli/parse-args";
+import { parseArgs } from "jsr:@std/cli@1.0.14/parse-args";
 
 export async function watchUI(
   sourceDir: string,

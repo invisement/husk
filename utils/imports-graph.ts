@@ -16,7 +16,7 @@ interface GraphI {
 import { walk } from "jsr:@std/fs@1.0.4";
 import { basename, dirname, join } from "jsr:@std/path@1.0.6";
 import { instance } from "npm:@viz-js/viz@3.10.0";
-import { parseArgs } from "jsr:@std/cli@1.0.14";
+import { parseArgs } from "jsr:@std/cli@1.0.14/parse-args";
 
 type FileName = string;
 type FilePath = string;
