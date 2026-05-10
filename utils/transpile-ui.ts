@@ -41,7 +41,7 @@ export class Transpiler {
       if (this.isTraspile(file)) {
         this.traspiles.push({
           source: join(Deno.cwd(), this.sourceDir, file),
-          target: join(this.outDir, file.replace(".ts", ".js")),
+          target: join(this.outDir, basename(file).replace(".ts", ".js")),
         });
       } else this.copies.push(file);
     }
