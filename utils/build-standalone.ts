@@ -1,11 +1,13 @@
 import { bundle } from "jsr:@deno/emit@0.46.0";
 import { join, toFileUrl } from "jsr:@std/path@1.0.8";
 import { ensureDir } from "jsr:@std/fs@1.0.5";
+import { encodeBase64 } from "jsr:@std/encoding@1.0.6/base64";
 
 const VENDOR_LIBS = {
-  "vendor-marked": "https://cdn.jsdelivr.net/npm/marked/marked.min.js",
-  "vendor-marked-gfm": "https://cdn.jsdelivr.net/npm/marked-gfm-heading-id/lib/index.umd.js",
-  "vendor-mermaid": "https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js",
+  "marked": "https://cdn.jsdelivr.net/npm/marked/marked.min.js",
+  "marked-gfm-heading-id": "https://cdn.jsdelivr.net/npm/marked-gfm-heading-id/lib/index.umd.js",
+  "mermaid": "https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js",
+  "graphviz": "https://esm.sh/@hpcc-js/wasm@2.16.2/dist/index.js",
 };
 
 export async function buildStandalone() {
@@ -14,15 +16,18 @@ export async function buildStandalone() {
   const distDir = join(Deno.cwd(), "dist");
   await ensureDir(distDir);
 
-  // 1. Download Vendor Libs
+  // 1. Download & Base64 Vendor Libs
   const vendors: Record<string, string> = {};
   for (const [id, url] of Object.entries(VENDOR_LIBS)) {
-    console.log(`Downloading ${id}...`);
+    console.log(`Inlining ${id}...`);
     try {
       const resp = await fetch(url);
-      vendors[id] = await resp.text();
+      const bytes = await resp.bytes();
+      const base64 = encodeBase64(bytes);
+      // For JS files, we can use a data URL
+      vendors[id] = `data:text/javascript;base64,${base64}`;
     } catch (e) {
-      console.warn(`Failed to download ${id} from ${url}. Offline functionality for this lib may be limited.`);
+      console.warn(`Failed to inline ${id} from ${url}`);
       vendors[id] = "";
     }
   }
@@ -39,6 +44,10 @@ export async function buildStandalone() {
   const guide = await Deno.readTextFile(join(Deno.cwd(), "ui/user-guide.md"));
 
   // 4. Generate HTML
+  const importMap = JSON.stringify({
+    imports: vendors
+  }, null, 2);
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -47,6 +56,12 @@ export async function buildStandalone() {
     <title>Markdown Presenter</title>
     <style id="app-css">${css}</style>
     <style id="custom-css"></style>
+    
+    <!-- === VENDOR IMPORT MAP === -->
+    <script type="importmap">${importMap}</script>
+
+    <!-- === VENDOR: EasyMDE CSS (Legacy) === -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
 </head>
 <body>
     <details id="details" open>
@@ -98,13 +113,10 @@ export async function buildStandalone() {
         <textarea id="editor-textarea" style="display:none;"></textarea>
         <div id="content"></div>
     </div>
-    <script id="vendor-marked">${vendors["vendor-marked"]}</script>
-    <script id="vendor-marked-gfm">${vendors["vendor-marked-gfm"]}</script>
-    <script id="vendor-mermaid">${vendors["vendor-mermaid"]}</script>
     <script type="application/json" id="assets">{}</script>
     <script type="text/markdown" id="default-doc"></script>
-    <script type="text/markdown" id="help-doc">${guide}</script>
-    <script id="app-js">${js}</script>
+    <script type="text/markdown" id="help-doc">${guide.replaceAll("</script>", "<\\/script>")}</script>
+    <script type="module" id="app-js">${js.replaceAll("</script>", "<\\/script>")}</script>
 </body>
 </html>`;
 
