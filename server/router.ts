@@ -9,6 +9,7 @@ defaultOptions = {method: 'GET', params: true, query: false, body: false, origin
 /** Options type for optional argument. The default values are {method: 'GET', params: true} */
 
 import { serveFile } from "jsr:@std/http@1.0.9/file-server";
+import { ignoreNoise } from "./middlewares.ts";
 type HttpMethod =
 	| "GET"
 	| "POST"
@@ -28,6 +29,7 @@ export type Options = {
 	origins?: string[];
 	log?: boolean;
 	headers?: Record<string, string>;
+	ignoreNoise?: boolean;
 };
 
 /** Route type, pattern follows web standard URLPattern (like /employees/:id) */
@@ -68,8 +70,11 @@ export class Router {
 	allowedOrigins = "*";
 	defaultOptions: Options = { method: "GET", origins: ["*"], log: true };
 
-	constructor(defaultOptions: Options) {
+	constructor(defaultOptions: Options = {}) {
 		Object.assign(this.defaultOptions, defaultOptions);
+		if (this.defaultOptions.ignoreNoise !== false) {
+			this.use(ignoreNoise);
+		}
 	}
 
 	use(

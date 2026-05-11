@@ -15,3 +15,4 @@ export { PubSub } from "./ui/pubsub.ts";
 export { EventWaiter } from "./ui/event-waiter.ts";
 
 export { parseArgs } from "./utils/helpers.ts";
+export * from "./server/middlewares.ts";
