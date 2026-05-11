@@ -67,6 +67,7 @@ const pathFinder = (
 export class Router {
 	routes: Route[] = [];
 	middlewares = new Map<unknown, (req: Request) => Promise<Response | void>>();
+	trackedDirs = new Map<string, { build: () => Promise<string> }>();
 	allowedOrigins = "*";
 	defaultOptions: Options = { method: "GET", origins: ["*"], log: true };
 
@@ -116,7 +117,8 @@ export class Router {
 				config.entrypoints,
 				config.importMap,
 			);
-			this.use(transpiler);
+			// Automatically track the output directory for on-demand rebuilding
+			this.trackedDirs.set(transpiler.outDir, transpiler);
 			return transpiler.outDir;
 		}
 
@@ -166,6 +168,16 @@ export class Router {
 
 			const match = pattern.exec(req.url);
 			if (!match) continue;
+
+			// Before serving, check if this request points to a tracked rebuild directory
+			if (typeof handler === "string") {
+				const resolvedPath = pathFinder(handler, match.pathname.groups);
+				for (const [dir, transpiler] of this.trackedDirs) {
+					if (resolvedPath.startsWith(dir)) {
+						await transpiler.build();
+					}
+				}
+			}
 			log && console.log(
 				`Route ${
 					new Date().toISOString()

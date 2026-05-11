@@ -33,6 +33,7 @@ export class Transpiler {
   traspiles: { source: string; target: string }[] = [];
   copies: string[] = [];
   lastBuildTime: number = 0;
+  fileMtimes = new Map<string, number>();
 
   private isTraspile = (file: string) =>
     ["ts", "js", "mjs"].includes(file.split(".").pop() || "");
@@ -58,11 +59,16 @@ export class Transpiler {
   }
 
   async needsRebuild(): Promise<boolean> {
-    const files = [...this.traspiles.map((t) => t.source), ...this.copies.map(f => join(Deno.cwd(), this.sourceDir, f))];
+    const files = [
+      ...this.traspiles.map((t) => t.source),
+      ...this.copies.map((f) => join(Deno.cwd(), this.sourceDir, f)),
+    ];
     for (const file of files) {
       try {
         const { mtime } = await Deno.stat(file);
-        if (mtime && mtime.getTime() > this.lastBuildTime) return true;
+        if (mtime && mtime.getTime() > (this.fileMtimes.get(file) || 0)) {
+          return true;
+        }
       } catch {
         return true;
       }
@@ -71,39 +77,58 @@ export class Transpiler {
   }
 
   async middleware(_req: Request): Promise<void> {
-    if (await this.needsRebuild()) {
-      console.log("Change detected, rebuilding UI...");
-      await this.build();
-    }
+    await this.build();
   }
 
-  async bundleIt(_minify: boolean): Promise<void> {
+  async bundleIt(minify: boolean, force = false): Promise<void> {
     for (const { source, target } of this.traspiles) {
-      const url = toFileUrl(source);
-      const result = await transpile(url, {
-        importMap: toFileUrl(join(Deno.cwd(), this.importMap)),
-      });
-      const code = result.get(url.href);
-      if (code) {
-        await ensureFile(target);
-        await Deno.writeTextFile(target, code);
+      try {
+        const { mtime } = await Deno.stat(source);
+        const lastTime = this.fileMtimes.get(source) || 0;
+
+        if (force || mtime.getTime() > lastTime) {
+          const url = toFileUrl(source);
+          const result = await transpile(url, {
+            importMap: toFileUrl(join(Deno.cwd(), this.importMap)),
+          });
+          const code = result.get(url.href);
+          if (code) {
+            await ensureFile(target);
+            await Deno.writeTextFile(target, code);
+            this.fileMtimes.set(source, mtime.getTime());
+            console.log(`  - Transpiled: ${basename(source)}`);
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to transpile ${source}:`, e);
       }
     }
   }
 
   async build(minify = false): Promise<string> {
-    const promises = this.copies.map(async (file) => {
-      const outFile = join(this.outDir, basename(file));
-      await ensureFile(outFile);
-      await Deno.copyFile(
-        join(Deno.cwd(), this.sourceDir, file),
-        outFile,
-      );
-    });
+    // 1. Process copies incrementally
+    for (const file of this.copies) {
+      const source = join(Deno.cwd(), this.sourceDir, file);
+      const target = join(this.outDir, basename(file));
 
+      try {
+        const { mtime } = await Deno.stat(source);
+        const lastTime = this.fileMtimes.get(source) || 0;
+
+        if (mtime.getTime() > lastTime) {
+          await ensureFile(target);
+          await Deno.copyFile(source, target);
+          this.fileMtimes.set(source, mtime.getTime());
+          console.log(`  - Updated asset: ${file}`);
+        }
+      } catch (e) {
+        console.error(`Failed to copy ${file}:`, e);
+      }
+    }
+
+    // 2. Process bundles (Transpile logic handles its own mtime check)
     await this.bundleIt(minify);
 
-    await Promise.all(promises);
     this.lastBuildTime = Date.now();
     return this.outDir;
   }
