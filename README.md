@@ -19,7 +19,26 @@ router.push("/api/:name", async (params, req) => {
 - **Response Objects**: You can return a native `Response` object for full control.
 - **Middleware**: Add pre-processing steps using `router.use()`.
 - **Static Serving**: Map URL patterns to local file paths.
-  - `router.push("/static/:file", "./assets/:file.json")`
+
+## UI Transpilation (Dev Mode)
+
+Husk provides a "Lazy" transpiler that only rebuilds your UI when a browser request is received and a file change is detected.
+
+### Setup in `server.ts`
+
+```typescript
+import { Router } from "jsr:@invisement/husk";
+
+const router = new Router();
+
+// initUI auto-discovers config from deno.json or package.json
+const uiDir = await router.initUI();
+
+router.push("/:path*", `${uiDir}/:path`);
+
+// serverInfo() handles PORT env var and localhost vs 0.0.0.0
+Deno.serve(router.serverInfo(), req => router.serve(req));
+```
 
 ## Middleware
 
@@ -31,31 +50,6 @@ router.use(async (req) => {
 });
 ```
 
-## UI Transpilation (Dev Mode)
-
-Husk provides a "Lazy" transpiler that only rebuilds your UI when a browser request is received and a file change is detected.
-
-### Setup in `server.ts`
-
-```typescript
-import { Router } from "jsr:@invisement/husk";
-import { uiEntrypoints, uiOutDir, uiSourceDir } from "./config.ts";
-
-const router = new Router();
-
-// initUI handles everything: 
-// 1. Detects --watch-ui flag
-// 2. Setup mtime-based rebuild middleware
-// 3. Returns the correct UI directory
-const uiDir = await router.initUI({
-    source: uiSourceDir,
-    entrypoints: uiEntrypoints,
-    output: uiOutDir
-});
-
-router.push("/:path*", `${uiDir}/:path`);
-```
-
 ## Imports Dependency Graph
 
 To create a dependency graph (in svg) for your internal modules:
@@ -63,6 +57,3 @@ To create a dependency graph (in svg) for your internal modules:
 ```sh
 deno run -A jsr:@invisement/husk/imports-graph > graph.svg
 ```
-
-- It creates the imports inter-dependency of your TS and JS (ESM) modules.
-- If you run it from a git repo, it respects your `.gitignore`.

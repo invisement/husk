@@ -89,8 +89,22 @@ export class Router {
 		return this;
 	}
 
-	async initUI(config: UIConfig): Promise<string> {
-		if (Deno.args.includes("--watch-ui")) {
+	async initUI(configFile = "deno.json"): Promise<string> {
+		const isDev = Deno.args.includes("--watch-ui");
+		let config: UIConfig | undefined;
+
+		try {
+			const text = await Deno.readTextFile(configFile);
+			const json = JSON.parse(text);
+			config = json.husk?.ui || json.ui;
+		} catch {
+			// If deno.json fails, try others or stay with defaults
+			if (configFile === "deno.json") {
+				return this.initUI("package.json");
+			}
+		}
+
+		if (isDev && config) {
 			const { getTranspiler } = await import("../utils/transpile-ui.ts");
 			const transpiler = await getTranspiler(
 				config.source,
@@ -100,7 +114,16 @@ export class Router {
 			this.use(transpiler);
 			return transpiler.outDir;
 		}
-		return config.output;
+
+		return config?.output || "dist";
+	}
+
+	serverInfo(): { port: number; hostname: string } {
+		const isProd = Deno.env.get("DENO_ENV") === "production";
+		return {
+			port: Number(Deno.env.get("PORT")) || 8000,
+			hostname: isProd ? "0.0.0.0" : "127.0.0.1",
+		};
 	}
 
 	push(
