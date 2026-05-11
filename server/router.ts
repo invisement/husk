@@ -37,6 +37,13 @@ export type Route = {
 	options: Options;
 };
 
+export type UIConfig = {
+	source: string;
+	entrypoints: string[];
+	output: string;
+	importMap?: string;
+};
+
 type AddInitializer = (initializer: () => void) => void;
 
 const pathFinder = (
@@ -57,11 +64,43 @@ const pathFinder = (
  */
 export class Router {
 	routes: Route[] = [];
+	middlewares = new Map<unknown, (req: Request) => Promise<Response | void>>();
 	allowedOrigins = "*";
 	defaultOptions: Options = { method: "GET", origins: ["*"], log: true };
 
 	constructor(defaultOptions: Options) {
 		Object.assign(this.defaultOptions, defaultOptions);
+	}
+
+	use(
+		item:
+			| ((req: Request) => Promise<Response | void>)
+			| { middleware: (req: Request) => Promise<Response | void> },
+	): this {
+		const fn = typeof item === "function"
+			? item
+			: item.middleware.bind(item);
+		this.middlewares.set(item, fn);
+		return this;
+	}
+
+	remove(item: unknown): this {
+		this.middlewares.delete(item);
+		return this;
+	}
+
+	async initUI(config: UIConfig): Promise<string> {
+		if (Deno.args.includes("--watch-ui")) {
+			const { getTranspiler } = await import("../utils/transpile-ui.ts");
+			const transpiler = await getTranspiler(
+				config.source,
+				config.entrypoints,
+				config.importMap,
+			);
+			this.use(transpiler);
+			return transpiler.outDir;
+		}
+		return config.output;
 	}
 
 	push(
@@ -86,6 +125,12 @@ export class Router {
 	async serve(
 		req: Request,
 	): Promise<Response | null> {
+		// Run middlewares
+		for (const mw of this.middlewares.values()) {
+			const res = await mw(req);
+			if (res instanceof Response) return res;
+		}
+
 		for (const { pattern, handler, options } of this.routes) {
 			const { method, headers, log, query, payload } = options;
 
@@ -109,21 +154,32 @@ export class Router {
 			}
 
 			if (payload) {
-				const payload = req.json();
-				Object.assign(params, payload);
+				const body = await req.json();
+				Object.assign(params, body);
 			}
 
 			if (typeof handler == "string") {
 				return serveFile(req, pathFinder(handler, params));
 			}
 
-			const response = await handler(...Object.values(params));
+			const result = await handler(params, req);
 			log && console.log(
 				`Success ${new Date().toISOString()}: ${
-					handler.name || handler
+					handler.name || "anonymous"
 				}`,
 			);
-			return new Response(response, { headers });
+
+			if (result instanceof Response) {
+				return result;
+			}
+
+			if (typeof result === "object" && result !== null) {
+				return new Response(JSON.stringify(result), {
+					headers: { "Content-Type": "application/json", ...headers },
+				});
+			}
+
+			return new Response(result, { headers });
 		}
 		this.defaultOptions.log && console.log(
 			`No Route ${new Date().toISOString()}: ${req.method} ${req.url}`,

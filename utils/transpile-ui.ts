@@ -4,16 +4,25 @@ import { basename, join, toFileUrl } from "jsr:@std/path@1.0.8";
 import { ensureFile } from "jsr:@std/fs@1.0.5";
 import { parseArgs } from "jsr:@std/cli@1.0.14/parse-args";
 
+export async function getTranspiler(
+  sourceDir: string,
+  files: string[] = ["index.html", "index.css", "index.ts"],
+  importMap: string = "./deno.json",
+): Promise<Transpiler> {
+  const outdir = await Deno.makeTempDir();
+  const transpiler = new Transpiler(sourceDir, files, outdir, importMap);
+  await transpiler.build();
+  return transpiler;
+}
+
 export async function watchUI(
   sourceDir: string,
   files: string[] = ["index.html", "index.css", "index.ts"],
   importMap: string = "./deno.json",
 ): Promise<string> {
-  const outdir = await Deno.makeTempDir();
-  const transpiler = new Transpiler(sourceDir, files, outdir, importMap);
-  await transpiler.build();
+  const transpiler = await getTranspiler(sourceDir, files, importMap);
   transpiler.watch();
-  return outdir;
+  return transpiler.outDir;
 }
 
 export class Transpiler {
@@ -23,6 +32,7 @@ export class Transpiler {
 
   traspiles: { source: string; target: string }[] = [];
   copies: string[] = [];
+  lastBuildTime: number = 0;
 
   private isTraspile = (file: string) =>
     ["ts", "js", "mjs"].includes(file.split(".").pop() || "");
@@ -44,6 +54,26 @@ export class Transpiler {
           target: join(this.outDir, basename(file).replace(".ts", ".js")),
         });
       } else this.copies.push(file);
+    }
+  }
+
+  async needsRebuild(): Promise<boolean> {
+    const files = [...this.traspiles.map((t) => t.source), ...this.copies.map(f => join(Deno.cwd(), this.sourceDir, f))];
+    for (const file of files) {
+      try {
+        const { mtime } = await Deno.stat(file);
+        if (mtime && mtime.getTime() > this.lastBuildTime) return true;
+      } catch {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async middleware(_req: Request): Promise<void> {
+    if (await this.needsRebuild()) {
+      console.log("Change detected, rebuilding UI...");
+      await this.build();
     }
   }
 
@@ -74,6 +104,7 @@ export class Transpiler {
     await this.bundleIt(minify);
 
     await Promise.all(promises);
+    this.lastBuildTime = Date.now();
     return this.outDir;
   }
 
