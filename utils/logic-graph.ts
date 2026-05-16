@@ -25,15 +25,15 @@ interface GraphConfig {
  */
 class LogicGraph {
     private interestList = new Set<string>([
-        "window", "document", "globalThis", "MutationObserver",
+        "window", "document", "globalThis", "MutationObserver", 
         "Selection", "customElements", "navigator", "fetch", "localStorage"
     ]);
     private dependencies: Dependency[] = [];
     private eventLinks: EventLink[] = [];
-    private topics = new Set<string>();
+    private topicDefMap = new Map<string, string>(); // topic -> relPath
     private excludeRegex: RegExp | null = null;
     private manualIncludes: string[] = [];
-    private discoveredMethods = new Map<string, string>();
+    private discoveredMethods = new Map<string, string>(); 
     private rootDir = ".";
 
     constructor(config: GraphConfig) {
@@ -48,7 +48,7 @@ class LogicGraph {
     async generate(rootDir: string): Promise<string> {
         this.rootDir = rootDir;
         const files = await this.findFiles(rootDir);
-
+        
         for (const file of files) {
             await this.discoverInterest(file);
         }
@@ -81,7 +81,7 @@ class LogicGraph {
 
         for (const line of lines) {
             const topicMatch = line.match(/(\w+):\s*new\s+PubSub/);
-            if (topicMatch) this.topics.add(topicMatch[1]);
+            if (topicMatch) this.topicDefMap.set(topicMatch[1], relPath);
 
             const classMatch = line.match(/class\s+(\w+)/);
             if (classMatch) currentClass = classMatch[1];
@@ -97,7 +97,7 @@ class LogicGraph {
 
             const funcMatch = line.match(/(?:export\s+)?(?:public\s+|static\s+|async\s+)*function\s+(\w+)\s*\(.*?\)/);
             const classMethodMatch = line.match(/^\s*(?:public\s+|static\s+|async\s+|private\s+)?(\w+)\s*\(.*?\)\s*{/);
-
+            
             const name = (funcMatch?.[1] || classMethodMatch?.[1]);
             if (name && !/^(if|while|for|switch|catch)$/.test(name)) {
                 this.interestList.add(name);
@@ -154,7 +154,7 @@ class LogicGraph {
             const busMatch = line.match(/(\w+)\.bus\(/);
             if (busMatch) {
                 activeBusTopic = busMatch[1];
-                this.topics.add(activeBusTopic);
+                if (!this.topicDefMap.has(activeBusTopic)) this.topicDefMap.set(activeBusTopic, relPath);
                 busState = "publishers";
                 continue;
             }
@@ -204,12 +204,12 @@ class LogicGraph {
 
     private isCalled(line: string, name: string): boolean {
         const regex = new RegExp(`\\.${name}\\(|\\b${name}\\(|\\b${name}\\.`);
-        return regex.test(line) &&
-            !line.includes("function") &&
-            !line.includes("export interface") &&
-            !line.includes("export class") &&
-            !line.trim().startsWith(`${name}(`) &&
-            !line.includes("{");
+        return regex.test(line) && 
+               !line.includes("function") && 
+               !line.includes("export interface") &&
+               !line.includes("export class") &&
+               !line.trim().startsWith(`${name}(`) && 
+               !line.includes("{");
     }
 
     private toDOT(): string {
@@ -221,6 +221,7 @@ class LogicGraph {
         const clusters: Record<string, { methods: string[], path: string }> = {};
         const browserAPIs = new Set<string>();
         const edges = new Set<string>();
+        const usedTopics = new Set<string>();
 
         for (const dep of this.dependencies) {
             const [relPath, cls, method] = dep.caller.split(":");
@@ -248,22 +249,26 @@ class LogicGraph {
 
         for (const link of this.eventLinks) {
             if (this.excludeRegex && this.excludeRegex.test(link.topic)) continue;
-            this.topics.add(link.topic);
+            usedTopics.add(link.topic);
             const topicNode = `"Topic:${link.topic}"`;
 
             if (link.publisher) {
                 const [path, cls, method] = link.publisher.split(":");
-                const key = cls === "Module" ? `${path}:Module` : cls;
-                if (!clusters[key]) clusters[key] = { methods: [], path };
-                if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
-                edges.add(`"${link.publisher}" -> ${topicNode}`);
+                if (!["setupFlow", "constructor", "main"].includes(method)) {
+                    const key = cls === "Module" ? `${path}:Module` : cls;
+                    if (!clusters[key]) clusters[key] = { methods: [], path };
+                    if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
+                    edges.add(`"${link.publisher}" -> ${topicNode}`);
+                }
             }
             if (link.subscriber) {
                 const [path, cls, method] = link.subscriber.split(":");
-                const key = cls === "Module" ? `${path}:Module` : cls;
-                if (!clusters[key]) clusters[key] = { methods: [], path };
-                if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
-                edges.add(`${topicNode} -> "${link.subscriber}"`);
+                if (!["setupFlow", "constructor", "main"].includes(method)) {
+                    const key = cls === "Module" ? `${path}:Module` : cls;
+                    if (!clusters[key]) clusters[key] = { methods: [], path };
+                    if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
+                    edges.add(`${topicNode} -> "${link.subscriber}"`);
+                }
             }
         }
 
@@ -276,15 +281,20 @@ class LogicGraph {
             dot += `  subgraph "cluster_${key.replace(/[^\w]/g, "_")}" {\n`;
             dot += `    label = "${label}";\n`;
             data.methods.forEach(m => {
-                dot += `    "${data.path}:${key.split(":")[1] || key}:${m}" [label="${m}"];\n`;
+                const nodeID = `${data.path}:${key.split(":")[1] || key}:${m}`;
+                dot += `    "${nodeID}" [label="${m}", URL="${data.path}", tooltip="${data.path}"];\n`;
             });
             dot += `  }\n`;
         }
 
-        if (this.topics.size > 0) {
+        if (usedTopics.size > 0) {
             dot += `  subgraph cluster_events {\n`;
             dot += `    label = "Events / PubSub";\n`;
-            this.topics.forEach(t => dot += `    "Topic:${t}" [label="${t}"];\n`);
+            usedTopics.forEach(t => {
+                const defPath = this.topicDefMap.get(t) || "";
+                const attr = defPath ? `, URL="${defPath}", tooltip="${defPath}"` : "";
+                dot += `    "Topic:${t}" [label="${t}"${attr}];\n`;
+            });
             dot += `  }\n`;
         }
 
@@ -330,7 +340,7 @@ if (import.meta.main) {
     if (args.help || args.h) {
         console.log(`
 Husk Logic-Graph Utility
-Generates a minimalist DOT dependency graph by performing line-by-line static analysis.
+Generates a interactive DOT dependency graph by performing line-by-line static analysis.
 
 Usage:
   deno run -A husk/utils/logic-graph.ts [options]
@@ -352,7 +362,7 @@ Configuration:
     const inDir = args.in || args._[0]?.toString() || ".";
     const format = args.format || "dot";
     const outPath = args.out;
-
+    
     const fileConfig = await loadConfig(inDir);
     const finalConfig: GraphConfig = {
         exclude: args.exclude || fileConfig.exclude,
@@ -361,7 +371,7 @@ Configuration:
 
     const lg = new LogicGraph(finalConfig);
     const dot = await lg.generate(inDir);
-
+    
     let output = dot;
     if (format === "svg") {
         output = (await instance()).renderString(dot, { format: "svg" });
