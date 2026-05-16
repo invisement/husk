@@ -118,19 +118,24 @@ class LogicGraph {
         let busState: "publishers" | "subscribers" | null = null;
 
         for (const line of lines) {
+            // 0. Context Changes (Highest Priority - Consumes the line)
             const classMatch = line.match(/class\s+(\w+)/);
-            if (classMatch) currentClass = classMatch[1];
+            if (classMatch) {
+                currentClass = classMatch[1];
+                continue;
+            }
 
             const methodMatch = line.match(/(?:public|private|static|async)?\s*(\w+)\s*\(.*?\)\s*(?::\s*[\w\u003c\u003e|]+)?\s*{/) || 
                                line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\b/);
             
             if (methodMatch && !/^(if|while|for|switch|catch)$/.test(methodMatch[1])) {
                 currentMethod = methodMatch[1];
+                continue;
             }
 
             const caller = `${relPath}:${currentClass}:${currentMethod}`;
 
-            // 1. .bus() orchestration (Highest Priority)
+            // 1. .bus() orchestration (Consumes line)
             if (activeBusTopic) {
                 const potentialCalls = line.match(/\.(\w+)\(/g);
                 if (potentialCalls) {
