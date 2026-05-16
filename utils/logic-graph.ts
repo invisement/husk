@@ -259,7 +259,10 @@ class LogicGraph {
 
         // Subgraph Definitions
         for (const [key, data] of Object.entries(clusters)) {
-            const label = key.includes(":") ? "Module" : key;
+            let label = key;
+            if (key.includes(":Module")) {
+                label = `Module: ${basename(data.path)}`;
+            }
             dot += `  subgraph "cluster_${key.replace(/[^\w]/g, "_")}" {\n`;
             dot += `    label = "${label}";\n`;
             data.methods.forEach(m => {
