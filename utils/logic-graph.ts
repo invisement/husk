@@ -227,7 +227,7 @@ class LogicGraph {
             const [relPath, cls, method] = dep.caller.split(":");
             
             // Skip "Wiring" callers to keep the graph logical
-            if (["setupFlow", "constructor", "main"].includes(method)) continue;
+            if (["setupFlow", "main"].includes(method)) continue;
             if (this.excludeRegex && (this.excludeRegex.test(method) || this.excludeRegex.test(dep.callee))) continue;
 
             const clusterKey = cls === "Module" ? `${relPath}:Module` : cls;
