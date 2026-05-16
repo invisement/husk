@@ -130,7 +130,7 @@ class LogicGraph {
 
             const caller = `${relPath}:${currentClass}:${currentMethod}`;
 
-            // 1. .bus() orchestration
+            // 1. .bus() orchestration (Highest Priority)
             if (activeBusTopic) {
                 const potentialCalls = line.match(/\.(\w+)\(/g);
                 if (potentialCalls) {
@@ -139,11 +139,8 @@ class LogicGraph {
                         if (name === "bus") continue;
                         const node = this.findDiscoveredNode(name);
                         if (node) {
-                            if (busState === "publishers") {
-                                this.eventLinks.push({ publisher: node, topic: activeBusTopic });
-                            } else {
-                                this.eventLinks.push({ subscriber: node, topic: activeBusTopic });
-                            }
+                            if (busState === "publishers") this.eventLinks.push({ publisher: node, topic: activeBusTopic });
+                            else this.eventLinks.push({ subscriber: node, topic: activeBusTopic });
                         }
                     }
                 }
@@ -151,7 +148,7 @@ class LogicGraph {
                 if (line.trim() === ");" || (line.includes(");") && !line.includes("=>") && !line.includes("("))) {
                     activeBusTopic = null; busState = null;
                 }
-                continue; // Skip standard dependency tracking for orchestration lines
+                continue; 
             }
 
             const busMatch = line.match(/(\w+)\.bus\(/);
@@ -159,34 +156,43 @@ class LogicGraph {
                 activeBusTopic = busMatch[1];
                 this.topics.add(activeBusTopic);
                 busState = "publishers";
+                continue;
             }
 
             // 2. .pub() and .sub()
             const pubCall = line.match(/(\w+)\.pub\(/);
-            if (pubCall) this.eventLinks.push({ publisher: caller, topic: pubCall[1] });
-
+            if (pubCall) {
+                this.eventLinks.push({ publisher: caller, topic: pubCall[1] });
+                continue;
+            }
+            
             const subCall = line.match(/(\w+)\.sub\(\s*(\w+)\s*\)/) || line.match(/(\w+)\.sub\(\s*.*?\.(\w+)\s*\)/);
             if (subCall) {
-                const topic = subCall[1];
-                const handlerNode = this.findDiscoveredNode(subCall[2]);
-                if (handlerNode) this.eventLinks.push({ subscriber: handlerNode, topic });
+                const node = this.findDiscoveredNode(subCall[2]);
+                if (node) this.eventLinks.push({ subscriber: node, topic: subCall[1] });
+                continue;
             }
 
             // 3. emit() and listen()
             const emitMatch = line.match(/emit\(['"](\w+)['"]\)/);
-            if (emitMatch) this.eventLinks.push({ publisher: caller, topic: emitMatch[1] });
-
+            if (emitMatch) {
+                this.eventLinks.push({ publisher: caller, topic: emitMatch[1] });
+                continue;
+            }
+            
             const listenMatch = line.match(/listen\(['"](\w+)['"]\s*,\s*(\w+)\)/) || line.match(/listen\(['"](\w+)['"]\s*,\s*.*?\.(\w+)\)/);
             if (listenMatch) {
-                const topic = listenMatch[1];
-                const handlerNode = this.findDiscoveredNode(listenMatch[2]);
-                if (handlerNode) this.eventLinks.push({ subscriber: handlerNode, topic });
+                const node = this.findDiscoveredNode(listenMatch[2]);
+                if (node) this.eventLinks.push({ subscriber: node, topic: listenMatch[1] });
+                continue;
             }
 
+            // 4. Direct Service Calls and Browser APIs
             for (const interest of this.interestList) {
                 if (interest === currentMethod) continue;
                 if (this.isCalled(line, interest)) {
                     this.dependencies.push({ caller, callee: interest });
+                    break; // One edge per line
                 }
             }
         }
