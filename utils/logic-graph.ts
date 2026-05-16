@@ -96,7 +96,7 @@ class LogicGraph {
             }
 
             const funcMatch = line.match(/(?:export\s+)?(?:public\s+|static\s+|async\s+)*function\s+(\w+)\s*\(.*?\)/);
-            const classMethodMatch = line.match(/^\s*(?:public\s+|static\s+|async\s+|private\s+)?(\w+)\s*\(.*?\)\s*{/);
+            const classMethodMatch = line.match(/^\s*(?:public\s+|static\s+|async\s+|private\s+)?(\w+)\s*\(.*?\)\s*(?::\s*[\w\u003c\u003e|]+)?\s*{/);
             
             const name = (funcMatch?.[1] || classMethodMatch?.[1]);
             if (name && !/^(if|while|for|switch|catch)$/.test(name)) {
@@ -121,7 +121,7 @@ class LogicGraph {
             const classMatch = line.match(/class\s+(\w+)/);
             if (classMatch) currentClass = classMatch[1];
 
-            const methodMatch = line.match(/(?:public|private|static|async)?\s*(\w+)\s*\(.*?\)\s*{/) || 
+            const methodMatch = line.match(/(?:public|private|static|async)?\s*(\w+)\s*\(.*?\)\s*(?::\s*[\w\u003c\u003e|]+)?\s*{/) || 
                                line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\b/);
             
             if (methodMatch && !/^(if|while|for|switch|catch)$/.test(methodMatch[1])) {
