@@ -151,6 +151,7 @@ class LogicGraph {
                 if (line.trim() === ");" || (line.includes(");") && !line.includes("=>") && !line.includes("("))) {
                     activeBusTopic = null; busState = null;
                 }
+                continue; // Skip standard dependency tracking for orchestration lines
             }
 
             const busMatch = line.match(/(\w+)\.bus\(/);
@@ -217,6 +218,9 @@ class LogicGraph {
 
         for (const dep of this.dependencies) {
             const [relPath, cls, method] = dep.caller.split(":");
+            
+            // Skip "Wiring" callers to keep the graph logical
+            if (["setupFlow", "constructor", "main"].includes(method)) continue;
             if (this.excludeRegex && (this.excludeRegex.test(method) || this.excludeRegex.test(dep.callee))) continue;
 
             const clusterKey = cls === "Module" ? `${relPath}:Module` : cls;
