@@ -121,7 +121,9 @@ class LogicGraph {
             const classMatch = line.match(/class\s+(\w+)/);
             if (classMatch) currentClass = classMatch[1];
 
-            const methodMatch = line.match(/(?:public|private|static|async)?\s*(\w+)\s*\(.*?\)\s*{/);
+            const methodMatch = line.match(/(?:public|private|static|async)?\s*(\w+)\s*\(.*?\)\s*{/) || 
+                               line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\b/);
+            
             if (methodMatch && !/^(if|while|for|switch|catch)$/.test(methodMatch[1])) {
                 currentMethod = methodMatch[1];
             }
