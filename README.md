@@ -1,94 +1,111 @@
 # Husk
 
-A tiny library in typescript for full stack development based on web standards.
+A modern Deno framework designed for three distinct operational phases: **Dev**, **Build**, and **Serve**.
 
-## Router
+## Framework Architecture
 
-Router (`const router = new Router()`) matches URLPatterns to your provided handler function.
+The architecture is partitioned into three specialized engines, each optimized for a specific part of the development lifecycle.
 
-### Features
-- **Auto-JSON**: Returning an object or array automatically sets `Content-Type: application/json`.
-- **Response Objects**: You can return a native `Response` object for full control.
-- **Smart Tracking**: Automatically rebuilds UI directories only when a matched route is requested.
-- **Middleware**: Add pre-processing steps using `router.use()`.
-- **Noise Filtering**: Automatically ignores browser noise like `.well-known` and `favicon.ico`.
+### The Three Phases of Husk
 
----
+```dot
+digraph HuskArchitecture {
+    rankdir=TB;
+    node [shape=box, style="rounded,filled", fontname="Inter, Helvetica", fontsize=10, fillcolor="#f9f9f9", color="#cccccc"];
+    edge [fontname="Inter, Helvetica", fontsize=9, color="#666666"];
 
-## UI Transpilation (Dev Mode)
-
-Husk features a "Smart Lazy" build system. It doesn't watch files in the background; instead, it performs an **Incremental Rebuild** exactly when the browser requests a file.
-
-### 1. Basic Scenario (Root UI)
-This is the most common setup where your UI is served from the root of the server.
-
-```typescript
-const router = new Router();
-
-// 1. Auto-discover config from deno.json and enable smart tracking
-const uiDir = await router.initUI();
-
-// 2. Serve from the tracked directory
-router.push("/:path*", `${uiDir}/:path`);
-
-Deno.serve(router.serverInfo(), req => router.serve(req));
-```
-
-### 2. Prefixed UI Scenario
-If your UI lives under a specific path (like `/app/`), the smart tracking still works because it tracks the **destination folder**, not the URL.
-
-```typescript
-const uiDir = await router.initUI();
-// Rebuilds only trigger when a request matches this /app/ path
-router.push("/app/:path*", `${uiDir}/:path`);
-```
-
-### 3. Incremental Intelligence
-Husk's transpiler is incremental by default. Even when a build is triggered:
-- **Assets**: Only changed CSS/HTML files are copied.
-- **Bundles**: Only changed TypeScript files trigger a re-transpilation.
-- **Vendor Libs**: Remote imports (esm.sh) are handled by Deno's native cache and never slow down your build.
-
----
-
-## Middleware & Customization
-
-### Default Middlewares
-Husk applies `ignoreNoise` by default. You can customize this in the constructor:
-
-```typescript
-// Disable all default noise filtering
-const router = new Router({ ignoreNoise: false });
-
-// Or remove it later by reference
-import { ignoreNoise } from "@invisement/husk";
-router.remove(ignoreNoise);
-```
-
-### Writing Middleware
-Middlewares can be simple functions or objects with a `middleware` method.
-
-```typescript
-router.use(async (req) => {
-    console.log(`${req.method} ${req.url}`);
-    // Return a Response to short-circuit, or nothing to continue
-});
-```
-
----
-
-## Configuration (`deno.json`)
-
-Husk reads your UI configuration directly from your project's `deno.json`:
-
-```json
-{
-  "husk": {
-    "ui": {
-      "source": "ui",
-      "entrypoints": ["index.html", "index.ts"],
-      "output": "ui-dist"
+    // Phase 1: Dev (The "Lazy" Engine)
+    subgraph cluster_dev {
+        label="1. DEV PHASE (--watch-ui)";
+        fontname="Inter Bold";
+        fillcolor="#e3f2fd";
+        style=filled;
+        
+        DevTrigger [label="Browser Refresh", shape=ellipse, fillcolor="#ffffff"];
+        DevTranspiler [label="Lazy Transpiler", fillcolor="#ffffff"];
+        TempFolder [label=".husk/dev-cache", shape=folder, fillcolor="#ffffff"];
+        
+        DevTrigger -> DevTranspiler [label="Triggers"];
+        DevTranspiler -> TempFolder [label="Writes JS/CSS"];
     }
-  }
+
+    // Phase 2: Build (The "Artifact" Engine)
+    subgraph cluster_build {
+        label="2. BUILD PHASE (deno task build)";
+        fontname="Inter Bold";
+        fillcolor="#f1f8e9";
+        style=filled;
+        
+        CLITrigger [label="CLI Command", shape=invhouse, fillcolor="#ffffff"];
+        BuildOrchestrator [label="Build Orchestrator", fillcolor="#ffffff"];
+        
+        subgraph cluster_channels {
+            label="Channels";
+            style=dashed;
+            Webapp [label="Webapp\n(ui-dist/)", shape=folder];
+            Standalone [label="Standalone\n(dist/)", shape=folder];
+        }
+        
+        CLITrigger -> BuildOrchestrator [label="Triggers"];
+        BuildOrchestrator -> Webapp [label="Builds"];
+        BuildOrchestrator -> Standalone [label="Builds"];
+    }
+
+    // Phase 3: Serve (The "Runtime" Engine)
+    subgraph cluster_serve {
+        label="3. SERVE PHASE (server.ts)";
+        fontname="Inter Bold";
+        fillcolor="#fff3e0";
+        style=filled;
+        
+        Router [label="Router\n(Front Controller)", style=bold];
+        StaticServer [label="Static Server"];
+        APIHandler [label="API / Logic Handlers"];
+        
+        Router -> StaticServer [label="Routes Files"];
+        Router -> APIHandler [label="Routes Logic"];
+    }
+
+    // Cross-Phase Interaction
+    TempFolder -> StaticServer [label="Serves Dev", style=dotted];
+    Webapp -> StaticServer [label="Serves Prod", style=dotted];
 }
 ```
+
+## Phase Breakdown
+
+| Phase | Purpose | Output |
+| :--- | :--- | :--- |
+| **Dev** | Instant developer feedback with zero overhead. | Hidden `.husk/` cache. |
+| **Build** | Generating production-ready artifacts for all channels. | `ui-dist/`, `dist/`. |
+| **Serve** | High-performance routing and asset delivery. | Live HTTP Responses. |
+
+## Features
+
+-   **Phase Isolation**: Development artifacts never clutter your production folders.
+-   **Multi-Channel Build**: One command builds your Webapp, Standalone HTML, and extensions.
+-   **On-Demand Dev**: Transpilation only happens when the browser asks for it.
+-   **Native Deno 2**: Built on JSR and native Deno standards.
+
+## Usage
+
+### Smart UI Discovery
+```typescript
+const uiDir = await router.initUI(); 
+// In dev: returns .husk/dev-cache
+// In prod: returns ui-dist
+router.push("/:path*", \`${uiDir}/:path\`);
+```
+
+## Husk Utilities
+
+### Logic-Graph (`husk/utils/logic-graph.ts`)
+A minimalist static analysis tool that generates behavioral dependency graphs. It maps service-to-service method calls and PubSub event flows (`Publisher -> Topic -> Subscriber`) without the overhead of a full AST parser.
+
+**Usage:**
+```bash
+deno run -A husk/utils/logic-graph.ts --in=src --out=reports/logic-graph.dot
+```
+
+### Imports-Graph (`husk/utils/imports-graph.ts`)
+Generates a file-level dependency graph based on ESM imports.
