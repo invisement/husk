@@ -209,12 +209,16 @@ class LogicGraph {
 
     private isCalled(line: string, name: string): boolean {
         const regex = new RegExp(`\\.${name}\\(|\\b${name}\\(|\\b${name}\\.`);
-        return regex.test(line) && 
-               !line.includes("function") && 
-               !line.includes("export interface") &&
-               !line.includes("export class") &&
-               !line.trim().startsWith(`${name}(`) && 
-               !line.includes("{");
+        if (!regex.test(line)) return false;
+
+        // Skip if it's a definition line
+        if (line.includes("function") || line.includes("interface") || line.includes("class")) return false;
+        
+        // Only skip if the brace looks like it's starting a method/function signature
+        // e.g. "myMethod() {" but NOT "myMethod(val, () => {"
+        if (line.trim().endsWith("{") && !line.includes("=>") && !line.includes(",")) return false;
+
+        return !line.trim().startsWith(`${name}(`);
     }
 
     private toDOT(): string {
