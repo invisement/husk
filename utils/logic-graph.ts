@@ -26,7 +26,7 @@ interface GraphConfig {
 class LogicGraph {
     private interestList = new Set<string>([
         "window", "document", "globalThis", "MutationObserver", 
-        "Selection", "customElements", "navigator", "fetch", "localStorage"
+        "Selection", "customElements", "navigator", "fetch", "localStorage", "addEventListener"
     ]);
     private dependencies: Dependency[] = [];
     private eventLinks: EventLink[] = [];
@@ -34,6 +34,7 @@ class LogicGraph {
     private excludeRegex: RegExp | null = null;
     private manualIncludes: string[] = [];
     private discoveredMethods = new Map<string, string>(); 
+    private compositions = new Map<string, Set<string>>(); // parentClass -> Set<composedClass>
     private rootDir = ".";
 
     constructor(config: GraphConfig) {
@@ -114,18 +115,35 @@ class LogicGraph {
 
         let currentClass = "Module";
         let currentMethod = "top-level";
-        let activeBusTopic: string | null = null;
+        let braceDepth = 0;
+        let activeSubTopic: string | null = null;
         let busState: "publishers" | "subscribers" | null = null;
 
         for (const line of lines) {
-            // 0. Context Changes (Highest Priority - Consumes the line)
+            // 0. Context Changes
             const classMatch = line.match(/class\s+(\w+)/);
             if (classMatch) {
                 currentClass = classMatch[1];
+                currentMethod = "top-level";
+                braceDepth = 0;
                 continue;
             }
 
-            const methodMatch = line.match(/(?:public|private|static|async)?\s*(\w+)\s*\(.*?\)\s*(?::\s*[\w\u003c\u003e|]+)?\s*{/) || 
+            for (const ch of line) {
+                if (ch === '{') braceDepth++;
+                if (ch === '}') braceDepth--;
+            }
+
+            if (currentClass !== "Module" && braceDepth <= 1 && currentMethod === "top-level") {
+                const compMatch = line.match(/=\s*new\s+(\w+)\s*\(/);
+                if (compMatch) {
+                    if (!this.compositions.has(currentClass)) this.compositions.set(currentClass, new Set());
+                    this.compositions.get(currentClass)!.add(compMatch[1]);
+                    continue;
+                }
+            }
+
+            const methodMatch = line.match(/(?:public|private|static|async)?\s*(\w+)\s*\(.*?\)\s*(?::\s*[\w<>|]+)?\s*{/) || 
                                line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\b/);
             
             if (methodMatch && !/^(if|while|for|switch|catch)$/.test(methodMatch[1])) {
@@ -135,48 +153,65 @@ class LogicGraph {
 
             const caller = `${relPath}:${currentClass}:${currentMethod}`;
 
-            // 1. .bus() orchestration (Consumes line)
-            if (activeBusTopic) {
-                const potentialCalls = line.match(/\.(\w+)\(/g);
-                if (potentialCalls) {
-                    for (const call of potentialCalls) {
-                        const name = call.slice(1, -1);
-                        if (name === "bus") continue;
-                        const node = this.findDiscoveredNode(name);
-                        if (node) {
-                            if (busState === "publishers") this.eventLinks.push({ publisher: node, topic: activeBusTopic });
-                            else this.eventLinks.push({ subscriber: node, topic: activeBusTopic });
-                        }
-                    }
-                }
-                if (line.includes("],")) busState = "subscribers";
-                if (line.trim() === ");" || (line.includes(");") && !line.includes("=>") && !line.includes("("))) {
-                    activeBusTopic = null; busState = null;
-                }
-                continue; 
-            }
-
-            const busMatch = line.match(/(\w+)\.bus\(/);
-            if (busMatch) {
-                activeBusTopic = busMatch[1];
-                if (!this.topicDefMap.has(activeBusTopic)) this.topicDefMap.set(activeBusTopic, relPath);
-                busState = "publishers";
-                continue;
-            }
-
-            // 2. .pub() and .sub()
-            const pubCall = line.match(/(\w+)\.pub\(/);
+            // 2. .pub() / .publish() and .sub() / .subscribe()
+            const pubCall = line.match(/(\w+)\.(?:pub|publish)\(/);
             if (pubCall) {
                 this.eventLinks.push({ publisher: caller, topic: pubCall[1] });
                 continue;
             }
             
-            const subCall = line.match(/(\w+)\.sub\(\s*(\w+)\s*\)/) || line.match(/(\w+)\.sub\(\s*.*?\.(\w+)\s*\)/);
+            // Subscribe with named reference
+            const subCall = line.match(/(\w+)\.(?:sub|subscribe)\(\s*(\w+)\s*\)/) || line.match(/(\w+)\.(?:sub|subscribe)\(\s*.*?\.(\w+)\s*\)/);
             if (subCall) {
                 const node = this.findDiscoveredNode(subCall[2]);
                 if (node) this.eventLinks.push({ subscriber: node, topic: subCall[1] });
                 continue;
             }
+
+            // 2.5 .bus() declarative wiring
+            const busMatch = line.match(/(\w+)\.bus\(/);
+            if (busMatch) {
+                activeSubTopic = busMatch[1];
+                busState = "publishers";
+                continue;
+            }
+
+            // Detect start of subscribe block
+            const subStartMatch = line.match(/(\w+)\.(?:sub|subscribe)\(/);
+            if (subStartMatch) {
+                activeSubTopic = subStartMatch[1];
+            }
+
+            // If we are inside a subscribe or bus block, link any method calls to the topic
+            if (activeSubTopic) {
+                if (line.includes("],")) {
+                    busState = "subscribers";
+                }
+                
+                for (const interest of this.interestList) {
+                    if (this.isCalled(line, interest)) {
+                        const targetNode = this.findDiscoveredNode(interest);
+                        if (targetNode) {
+                            if (busState === "publishers") {
+                                this.eventLinks.push({ publisher: targetNode, topic: activeSubTopic });
+                            } else {
+                                this.eventLinks.push({ subscriber: targetNode, topic: activeSubTopic });
+                            }
+                        } else if (this.isBrowserAPI(interest)) {
+                            if (busState === "publishers") {
+                                this.eventLinks.push({ publisher: `Browser:${interest}`, topic: activeSubTopic });
+                            } else {
+                                this.eventLinks.push({ subscriber: `Browser:${interest}`, topic: activeSubTopic });
+                            }
+                        }
+                    }
+                }
+                if (line.trim() === ");" && busState === "subscribers") {
+                    activeSubTopic = null;
+                    busState = null;
+                }
+            }
+
 
             // 3. emit() and listen()
             const emitMatch = line.match(/emit\(['"](\w+)['"]\)/);
@@ -212,7 +247,7 @@ class LogicGraph {
         if (!regex.test(line)) return false;
 
         // Skip if it's a definition line
-        if (line.includes("function") || line.includes("interface") || line.includes("class")) return false;
+        if (/\b(?:function|interface|class)\b/.test(line)) return false;
         
         // Only skip if the brace looks like it's starting a method/function signature
         // e.g. "myMethod() {" but NOT "myMethod(val, () => {"
@@ -223,8 +258,8 @@ class LogicGraph {
 
     private toDOT(): string {
         let dot = `digraph logic {\n`;
-        dot += `  graph [fontsize=24; rankdir="LR"; labelloc="b"; concentrate=true; overlap=false; splines=true; color=black; nodesep=0.5; ranksep=2;];\n`;
-        dot += `  node [shape=box, fontsize=16, color=blue, fontname="Arial", style=filled, fillcolor="#f9f9ff"];\n`;
+        dot += `  graph [fontname="system-ui"; fontcolor=darkblue; fontsize=14; style="dashed" rankdir="LR"; concentrate=true; overlap=false; splines=true; color=darkblue; ranksep=1.5;];\n`;
+        dot += `  node [fontname="sans-serif"; shape=Mrecord, fontsize=12, color=blue, style=filled, fillcolor="#f9f9ff"];\n`;
         dot += `  edge [fontsize=12, color=blue, arrowhead=vee];\n\n`;
 
         const clusters: Record<string, { methods: string[], path: string }> = {};
@@ -243,16 +278,24 @@ class LogicGraph {
             if (!clusters[clusterKey]) clusters[clusterKey] = { methods: [], path: relPath };
             if (!clusters[clusterKey].methods.includes(method)) clusters[clusterKey].methods.push(method);
 
+            const callerNode = `"${relPath}:${clusterKey}":"${method}"`;
+
             const discovered = this.discoveredMethods.get(dep.callee);
             if (discovered) {
                 const [tPath, tCls, tMethod] = discovered.split(":");
+                
+                // Skip self-references (methods of a class calling each other)
+                if (relPath === tPath && cls === tCls) continue;
+
                 const tClusterKey = tCls === "Module" ? `${tPath}:Module` : tCls;
                 if (!clusters[tClusterKey]) clusters[tClusterKey] = { methods: [], path: tPath };
                 if (!clusters[tClusterKey].methods.includes(tMethod)) clusters[tClusterKey].methods.push(tMethod);
-                edges.add(`"${dep.caller}" -> "${discovered}"`);
+                
+                const calleeNode = `"${tPath}:${tClusterKey}":"${tMethod}"`;
+                edges.add(`${callerNode} -> ${calleeNode}`);
             } else if (this.isBrowserAPI(dep.callee)) {
                 browserAPIs.add(dep.callee);
-                edges.add(`"${dep.caller}" -> "Browser:${dep.callee}"`);
+                edges.add(`${callerNode} -> "Browser":"${dep.callee}"`);
             }
         }
 
@@ -262,37 +305,52 @@ class LogicGraph {
             const topicNode = `"Topic:${link.topic}"`;
 
             if (link.publisher) {
-                const [path, cls, method] = link.publisher.split(":");
-                if (!["setupFlow", "constructor", "main"].includes(method)) {
-                    const key = cls === "Module" ? `${path}:Module` : cls;
-                    if (!clusters[key]) clusters[key] = { methods: [], path };
-                    if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
-                    edges.add(`"${link.publisher}" -> ${topicNode}`);
+                if (link.publisher.startsWith("Browser:")) {
+                    const api = link.publisher.split(":")[1];
+                    browserAPIs.add(api);
+                    edges.add(`"Browser":"${api}" -> ${topicNode}`);
+                } else {
+                    const [path, cls, method] = link.publisher.split(":");
+                    if (!["setupFlow", "constructor", "main"].includes(method)) {
+                        const key = cls === "Module" ? `${path}:Module` : cls;
+                        if (!clusters[key]) clusters[key] = { methods: [], path };
+                        if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
+                        edges.add(`"${path}:${key}":"${method}" -> ${topicNode}`);
+                    }
                 }
             }
             if (link.subscriber) {
-                const [path, cls, method] = link.subscriber.split(":");
-                if (!["setupFlow", "constructor", "main"].includes(method)) {
-                    const key = cls === "Module" ? `${path}:Module` : cls;
-                    if (!clusters[key]) clusters[key] = { methods: [], path };
-                    if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
-                    edges.add(`${topicNode} -> "${link.subscriber}"`);
+                if (link.subscriber.startsWith("Browser:")) {
+                    const api = link.subscriber.split(":")[1];
+                    browserAPIs.add(api);
+                    edges.add(`${topicNode} -> "Browser":"${api}"`);
+                } else {
+                    const [path, cls, method] = link.subscriber.split(":");
+                    if (!["setupFlow", "constructor", "main"].includes(method)) {
+                        const key = cls === "Module" ? `${path}:Module` : cls;
+                        if (!clusters[key]) clusters[key] = { methods: [], path };
+                        if (!clusters[key].methods.includes(method)) clusters[key].methods.push(method);
+                        edges.add(`${topicNode} -> "${path}:${key}":"${method}"`);
+                    }
                 }
             }
         }
 
         // Subgraph Definitions
         for (const [key, data] of Object.entries(clusters)) {
+            dot += `  subgraph "cluster_${key.replace(/[^\w]/g, "_")}" {\n`;
+            
             let label = key;
             if (key.includes(":Module")) {
                 label = `Module: ${basename(data.path)}`;
             }
-            dot += `  subgraph "cluster_${key.replace(/[^\w]/g, "_")}" {\n`;
             dot += `    label = "${label}";\n`;
-            data.methods.forEach(m => {
-                const nodeID = `${data.path}:${key.split(":")[1] || key}:${m}`;
-                dot += `    "${nodeID}" [label="${m}", URL="${data.path}", tooltip="${data.path}"];\n`;
-            });
+            
+            if (data.methods.length > 0) {
+                const methodStr = data.methods.map(m => `<${m}> ${m}`).join(" | ");
+                const nodeID = `${data.path}:${key}`;
+                dot += `    "${nodeID}" [label="${methodStr}", URL="${data.path}", tooltip="${data.path}"];\n`;
+            }
             dot += `  }\n`;
         }
 
@@ -310,7 +368,8 @@ class LogicGraph {
         if (browserAPIs.size > 0) {
             dot += `  subgraph cluster_browser {\n`;
             dot += `    label = "Browser APIs";\n`;
-            browserAPIs.forEach(g => dot += `    "Browser:${g}" [label="${g}"];\n`);
+            const browserMethods = Array.from(browserAPIs).map(m => `<${m}> ${m}`).join(" | ");
+            dot += `    "Browser" [label="${browserMethods}"];\n`;
             dot += `  }\n`;
         }
 
@@ -322,7 +381,7 @@ class LogicGraph {
     }
 
     private isBrowserAPI(name: string): boolean {
-        return ["window", "document", "globalThis", "MutationObserver", "Selection", "customElements", "navigator", "fetch", "localStorage"].includes(name);
+        return ["window", "document", "globalThis", "MutationObserver", "Selection", "customElements", "navigator", "fetch", "localStorage", "addEventListener"].includes(name);
     }
 }
 

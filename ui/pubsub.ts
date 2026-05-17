@@ -43,9 +43,10 @@ export class PubSub<Type> {
 	}
 
 	/** Declaratively wires multiple publishers and subscribers in one line. */
-	bus(publishers: Array<(cb: (v: Type) => void) => void>, subscribers: Array<(v: Type) => void>): void {
+	bus(publishers: Array<(cb: (v: Type) => void) => void>, subscribers: Array<(v: Type) => void>): string[] {
 		publishers.forEach((reg) => reg((val) => this.pub(val)));
-		subscribers.forEach((sub) => this.sub(sub));
+		const keys = subscribers.map((sub) => this.sub(sub));
+		return keys
 	}
 
 	unsub(key: string): void {
