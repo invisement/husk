@@ -81,10 +81,12 @@ class LogicGraph {
         let inInterface = false;
 
         for (const line of lines) {
+            if (line.trim().startsWith("//") || line.trim().startsWith("*")) continue;
+
             const topicMatch = line.match(/(\w+):\s*new\s+PubSub/);
             if (topicMatch) this.topicDefMap.set(topicMatch[1], relPath);
 
-            const classMatch = line.match(/class\s+(\w+)/);
+            const classMatch = line.match(/\bclass\s+(\w+)\b/);
             if (classMatch) currentClass = classMatch[1];
 
             const interfaceMatch = line.match(/export\s+interface\s+(\w+)/);
@@ -120,8 +122,10 @@ class LogicGraph {
         let busState: "publishers" | "subscribers" | null = null;
 
         for (const line of lines) {
+            if (line.trim().startsWith("//") || line.trim().startsWith("*")) continue;
+
             // 0. Context Changes
-            const classMatch = line.match(/class\s+(\w+)/);
+            const classMatch = line.match(/\bclass\s+(\w+)\b/);
             if (classMatch) {
                 currentClass = classMatch[1];
                 currentMethod = "top-level";
